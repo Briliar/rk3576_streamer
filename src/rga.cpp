@@ -13,36 +13,57 @@ int init_rga() {
     return 0;
 }
 
-int convert_yuyv_to_nv12(int src_fd, void* dst_ptr, int width, int height) {
-    // 1. 包装输入 (Source): 来自 V4L2 的 DMA-FD
-    // RK_FORMAT_YUYV_422 就是 YUYV
-    rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422);
+// int convert_yuyv_to_nv12(int src_fd, void* dst_ptr, int width, int height) {
+//     // 1. 包装输入 (Source): 来自 V4L2 的 DMA-FD
+//     // RK_FORMAT_YUYV_422 就是 YUYV
+//     rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422);
 
-    // 2. 包装输出 (Destination): 这里的 dst_ptr 是我们 malloc 出来的内存地址
-    // RK_FORMAT_YCbCr_420_SP 就是 NV12
-    rga_buffer_t dst = wrapbuffer_virtualaddr(dst_ptr, width, height, RK_FORMAT_YCbCr_420_SP);
 
-    // 3. 校验参数 (这是个好习惯)
-    if (imcheck(src, dst, {}, {}) <= 0) {
-        cerr << "❌ [RGA] 参数校验失败 (imcheck failed)" << endl;
-        return -1;
-    }
+//     // 2. 包装输出 (Destination): 这里的 dst_ptr 是我们 malloc 出来的内存地址
+//     // RK_FORMAT_YCbCr_420_SP 就是 NV12
+//     rga_buffer_t dst = wrapbuffer_virtualaddr(dst_ptr, width, height, RK_FORMAT_YCbCr_420_SP);
 
-    // 4. 执行转换 (Convert Color)
-    // 这一步是同步的，函数返回时，硬件已经把图搬完了
-    IM_STATUS status = imcvtcolor(src, dst, src.format, dst.format);
+//     // 3. 校验参数 (这是个好习惯)
+//     if (imcheck(src, dst, {}, {}) <= 0) {
+//         cerr << "❌ [RGA] 参数校验失败 (imcheck failed)" << endl;
+//         return -1;
+//     }
+
+//     // 4. 执行转换 (Convert Color)
+//     // 这一步是同步的，函数返回时，硬件已经把图搬完了
+//     IM_STATUS status = imcvtcolor(src, dst, src.format, dst.format);
     
-    if (status != IM_STATUS_SUCCESS) {
-        cerr << "❌ [RGA] 转换失败，错误码: " << status << endl;
-        return -1;
-    }
+//     if (status != IM_STATUS_SUCCESS) {
+//         cerr << "❌ [RGA] 转换失败，错误码: " << status << endl;
+//         return -1;
+//     }
+   
+//     return 0;
+// }
 
-    return 0;
+int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
+    // 1. SRC (V4L2) - 记得用你测试成功的格式 (UYVY 或 YUYV)
+    rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422); 
+    src.wstride = width;
+    src.hstride = height;
+
+    // 2. DST (MPP FD)
+    // 这里使用 wrapbuffer_fd，必须传入 fd
+    rga_buffer_t dst = wrapbuffer_fd(dst_fd, width, height, RK_FORMAT_YCbCr_420_SP);
+    
+    // 【重点】这里也要对齐，虽然 720P 不需要，但保持习惯
+    dst.wstride = (width + 15) & (~15);
+    dst.hstride = (height + 15) & (~15);
+
+    return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1;
 }
-
+/*
 void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     cout << "🧪 开始 RGA 转码测试: YUYV -> NV12" << endl;
 
+    // 1. 打开设备
+    open_camera(fd, w, h);
+    if (fd < 0) return;
 
     int n_buffers = 4;
     CameraBuffer* buffers = map_buffers(fd, &n_buffers);
@@ -98,3 +119,4 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     
     cout << "✅ RGA 测试结束！请查看 " << filename << endl;
 }
+*/

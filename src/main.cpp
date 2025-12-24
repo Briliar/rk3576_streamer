@@ -8,9 +8,9 @@
 #include <cstring>      // 用于 memset
 #include "v4l2.h"
 #include "rga.h"
+#include "mpp_encoder.h"
 
 using namespace std;
-
 
 
 int main(int argc, char **argv) {
@@ -22,9 +22,8 @@ int main(int argc, char **argv) {
     }
     const char* dev_name = argv[1];
     int fd = query_device_info(dev_name);
-    //run_convert_test(fd, 1280, 720, 60, "output_1280x720.nv12");
-    // run_capture_test(fd, 1280, 720, 60, "output_1280x720.yuv");
-
+    //run_capture_test(fd, 1280, 720, 120, "output_1280x720.yuv");
+    //run_convert_test(fd, 1280, 720, 120, "output_1280x720.nv12");
     //Open the camera with specific resolution and frame rate
     open_camera(fd, 1280, 720);
     
@@ -47,39 +46,49 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    cout << "=== 开始采集循环 (按 Ctrl+C 结束) ===" << endl;
-
-    // 4. 循环采集 100 帧
-    for (int i = 0; i < 100; ++i) {
-        // A. 抓取一帧 (DQBUF)
-        // 这一步会阻塞，直到摄像头拍好照片
-        int index = wait_and_get_frame(fd);
-        
-        if (index < 0) {
-            cerr << "抓取失败，跳过" << endl;
-            continue;
-        }
-
-        // B. 这里可以处理图像了！
-        // buffers[index].start     -> 图像数据的虚拟地址 (CPU读写)
-        // buffers[index].length    -> 图像大小
-        // buffers[index].export_fd -> 图像数据的 DMA-BUF (给RGA/MPP用)
-        
-        cout << "Frame [" << i << "] Index: " << index 
-             << " | Size: " << buffers[index].length 
-             << " | DMA-FD: " << buffers[index].export_fd << endl;
-
-        // --- TODO: 下一步我们要在这里调用 RGA 库进行转码 ---
-
-        // C. 处理完后，必须把盘子还回去 (QBUF)
-        // 如果你不还，4次循环后，驱动手里就没盘子了，程序就会卡死在 DQBUF
-        if (return_frame(fd, index) < 0) {
-            cerr << "归还 Buffer 失败" << endl;
-            break;
-        }
+    // 2. RGA Init
+    init_rga();
+    int w = 1280; // 你的 720P
+    int h = 720;
+    // 3. MPP Init (这里会自动分配好 shared_fd)
+    MppContext mpp_ctx;
+    if (init_mpp(mpp_ctx, w, h, 30) < 0) {
+        return -1;
     }
 
-    // 5. 结束清理
+    FILE* fp = fopen("output.h264", "wb");
+    cout << "🚀 开始录制 H.264 (720P)..." << endl;
+    
+    for (int i = 0; i < 100; ++i) { // 录制 100 帧
+        int index = wait_and_get_frame(fd);
+        if (index < 0) continue;
+
+        // ===========================================
+        // 核心步骤 A: RGA 转换 (FD -> FD)
+        // src: V4L2 的 export_fd
+        // dst: MPP 的 shared_fd
+        // ===========================================
+        int ret_rga = convert_yuyv_to_nv12(buffers[index].export_fd, mpp_ctx.shared_fd, w, h);
+        
+        if (ret_rga == 0) {
+            // ===========================================
+            // 核心步骤 B: MPP 编码
+            // 数据已经在 mpp_ctx.shared_fd 里了，直接编！
+            // ===========================================
+            encode_frame(mpp_ctx, fp);
+            
+            cout << "Encoded Frame: " << i << "\r" << flush;
+        } else {
+            cerr << "RGA 转换失败" << endl;
+        }
+
+        return_frame(fd, index);
+    }
+
+    // 清理
+    cout << endl << "✅ 录制完成" << endl;
+    fclose(fp);
+    cleanup_mpp(mpp_ctx);
     stop_capturing(fd);
 
     // 退出前的清理
