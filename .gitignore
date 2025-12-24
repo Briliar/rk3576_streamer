@@ -1,0 +1,24 @@
+# 忽略编译输出文件夹
+build/
+bin/
+out/
+
+# 忽略 C++ 编译产生的中间文件
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# 忽略 CMake 产生的临时文件 (如果你不在 build 文件夹里编译)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# 忽略 IDE 配置 (VS Code / CLion)
+.vscode/
+.idea/
+*.swp
