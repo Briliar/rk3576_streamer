@@ -24,9 +24,9 @@ int main(int argc, char **argv) {
     int fd = query_device_info(dev_name);
     //run_capture_test(fd, 1280, 720, 120, "output_1280x720.yuv");
     //run_convert_test(fd, 1280, 720, 120, "output_1280x720.nv12");
-    run_camera_encoder_test(fd, 1280, 720,300,"output.h264");
+    //run_camera_encoder_test(fd, 1280, 720,300,"output.h264");
     //Open the camera with specific resolution and frame rate
-    
+
     return 0;
 }
 

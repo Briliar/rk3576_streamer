@@ -30,6 +30,8 @@ public:
      */
     int encode(FILE* out_fp);
 
+    void* get_input_ptr();
+    
     /**
      * @brief 销毁资源
      */

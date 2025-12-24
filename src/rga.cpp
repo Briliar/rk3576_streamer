@@ -1,5 +1,6 @@
 #include "rga.h"
 #include "v4l2.h"
+#include "mpp_encoder.h"
 #include <iostream>
 #include <cstring>
 
@@ -13,33 +14,6 @@ int init_rga() {
     return 0;
 }
 
-// int convert_yuyv_to_nv12(int src_fd, void* dst_ptr, int width, int height) {
-//     // 1. 包装输入 (Source): 来自 V4L2 的 DMA-FD
-//     // RK_FORMAT_YUYV_422 就是 YUYV
-//     rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422);
-
-
-//     // 2. 包装输出 (Destination): 这里的 dst_ptr 是我们 malloc 出来的内存地址
-//     // RK_FORMAT_YCbCr_420_SP 就是 NV12
-//     rga_buffer_t dst = wrapbuffer_virtualaddr(dst_ptr, width, height, RK_FORMAT_YCbCr_420_SP);
-
-//     // 3. 校验参数 (这是个好习惯)
-//     if (imcheck(src, dst, {}, {}) <= 0) {
-//         cerr << "❌ [RGA] 参数校验失败 (imcheck failed)" << endl;
-//         return -1;
-//     }
-
-//     // 4. 执行转换 (Convert Color)
-//     // 这一步是同步的，函数返回时，硬件已经把图搬完了
-//     IM_STATUS status = imcvtcolor(src, dst, src.format, dst.format);
-    
-//     if (status != IM_STATUS_SUCCESS) {
-//         cerr << "❌ [RGA] 转换失败，错误码: " << status << endl;
-//         return -1;
-//     }
-   
-//     return 0;
-// }
 
 int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
     // 1. SRC (V4L2) - 记得用你测试成功的格式 (UYVY 或 YUYV)
@@ -57,11 +31,11 @@ int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
 
     return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1;
 }
-/*
-void run_convert_test(int fd, int w, int h, int count, const char* filename) {
-    cout << "🧪 开始 RGA 转码测试: YUYV -> NV12" << endl;
 
-    // 1. 打开设备
+void run_convert_test(int fd, int w, int h, int count, const char* filename) {
+    cout << "🧪 开始 RGA 转码测试: YUYV -> NV12 (使用 MPP 内存)" << endl;
+
+    // 1. 打开设备 (修正了之前的调用方式)
     open_camera(fd, w, h);
     if (fd < 0) return;
 
@@ -76,19 +50,23 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     // 2. 初始化 RGA
     init_rga();
 
-    // 3. 【新增】申请一块内存存放 NV12 结果
-    // NV12 大小 = 宽 * 高 * 1.5
-    size_t nv12_size = w * h * 1.5;
-    void* nv12_buffer = malloc(nv12_size);
-    if (!nv12_buffer) {
-        perror("malloc 失败");
-        return;
+    // 3. 【核心修改】初始化 MPP Encoder (代替 malloc)
+    // 我们利用它来分配一块 RGA 喜欢的物理连续内存
+    MppEncoder encoder;
+    if (encoder.init(w, h, 30) < 0) { // 帧率随便填，只为分配内存
+        cerr << "❌ 内存分配失败" << endl;
     }
-    cout << ">> 分配 NV12 缓存大小: " << nv12_size << " 字节" << endl;
+    
+    // 获取这块内存的关键信息
+    int dst_fd = encoder.get_input_fd();   // 给 RGA 用
+    void* dst_ptr = encoder.get_input_ptr(); // 给 fwrite 用 (保存文件)
+    size_t nv12_size = w * h * 1.5;
+
+    cout << ">> MPP 内存就绪. FD=" << dst_fd << " Ptr=" << dst_ptr << endl;
 
     // 4. 打开输出文件
     FILE* fp = fopen(filename, "wb");
-    if (!fp) { perror("文件创建失败"); return; }
+    if (!fp) { perror("文件创建失败"); }
 
     // 5. 循环处理
     for (int i = 0; i < count; ++i) {
@@ -96,14 +74,19 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
         if (index < 0) continue;
 
         // ==========================================
-        // 核心环节：调用 RGA 进行转码
+        // 核心环节：调用 RGA 进行转码 (FD -> FD)
         // ==========================================
-        // 输入：buffers[index].export_fd (V4L2 里的 YUYV 数据)
-        // 输出：nv12_buffer (我们 malloc 的内存)
-        if (convert_yuyv_to_nv12(buffers[index].export_fd, nv12_buffer, w, h) == 0) {
-            // 转码成功，把 NV12 数据写入文件
-            fwrite(nv12_buffer, 1, nv12_size, fp);
-            cout << "转换并保存第 " << i+1 << " 帧 \r" << flush;
+        // 输入：V4L2 的 export_fd
+        // 输出：MPP 分配的 dst_fd (替换了原来的 malloc 指针)
+        if (convert_yuyv_to_nv12(buffers[index].export_fd, dst_fd, w, h) == 0) {
+            
+            // 转码成功，使用虚拟地址指针把数据写入文件
+            if (dst_ptr) {
+                fwrite(dst_ptr, 1, nv12_size, fp);
+                cout << "转换并保存第 " << i+1 << " 帧 \r" << flush;
+            }
+        } else {
+            cerr << "RGA 转换失败" << endl;
         }
 
         if (return_frame(fd, index) < 0) break;
@@ -111,12 +94,12 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     cout << endl;
 
     // 6. 清理
-    free(nv12_buffer); // 别忘了释放 malloc 的内存
     fclose(fp);
+
+    // encoder 析构函数会自动释放 MPP 内存，不需要手动 free
     stop_capturing(fd);
     release_buffers(buffers, n_buffers);
     close(fd);
     
     cout << "✅ RGA 测试结束！请查看 " << filename << endl;
 }
-*/

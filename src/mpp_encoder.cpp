@@ -121,7 +121,12 @@ int MppEncoder::encode(FILE* out_fp) {
 
     return -1; 
 }
-
+void* MppEncoder::get_input_ptr() {
+    if (shared_input_buf) {
+        return mpp_buffer_get_ptr(shared_input_buf);
+    }
+    return nullptr;
+}
 void MppEncoder::deinit() {
     if (shared_input_buf) {
         mpp_buffer_put(shared_input_buf);
