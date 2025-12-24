@@ -4,28 +4,49 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_meta.h>
 #include <cstdio>
-struct MppContext {
-    MppCtx ctx;
-    MppApi* mpi;
-    MppEncCfg cfg;
-    MppBufferGroup buf_grp; // 内存池管理
-    MppBuffer shared_buf;   // 【核心】RGA和MPP共享的buffer
-    int shared_fd;          // 这块内存的 FD (给 RGA 用)
-    void* shared_ptr;       // 这块内存的 虚拟地址 (调试用)
-    size_t frame_size;
-    int width;
-    int height;
+class MppEncoder {
+public:
+    MppEncoder();
+    ~MppEncoder();
+
+    /**
+     * @brief 初始化编码器并分配输入内存
+     * @param w 宽
+     * @param h 高
+     * @param fps 帧率
+     * @return 0 成功, -1 失败
+     */
+    int init(int w, int h, int fps);
+
+    /**
+     * @brief 获取输入缓冲区的 DMA-FD (给 RGA 用)
+     */
+    int get_input_fd() const;
+
+    /**
+     * @brief 执行编码并将结果写入文件
+     * @param out_fp 打开的文件指针 (h264文件)
+     * @return 0 成功, -1 失败
+     */
+    int encode(FILE* out_fp);
+
+    /**
+     * @brief 销毁资源
+     */
+    void deinit();
+
+private:
+    int width = 0;
+    int height = 0;
+    
+    // MPP 核心上下文
+    MppCtx ctx = nullptr;
+    MppApi* mpi = nullptr;
+    MppEncCfg cfg = nullptr;
+
+    // 零拷贝关键：这是 MPP 分配的物理连续内存
+    // RGA 往这里写，MPP 从这里读
+    MppBuffer shared_input_buf = nullptr;
 };
 
-// 初始化 MPP，并分配好 shared_buf
-// 返回 0 成功，-1 失败
-int init_mpp(MppContext& mpp, int w, int h, int fps);
-
-// 执行编码
-// 这里的 buffer 已经在 init 里分配好了，RGA 只要往 mpp.shared_fd 里写数据即可
-// 写入后，调用此函数进行编码
-// out_fp: 打开的 FILE* 指针，用于保存 h264
-int encode_frame(MppContext& mpp, FILE* out_fp);
-
-// 销毁资源
-void cleanup_mpp(MppContext& mpp);
+void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* filename);
