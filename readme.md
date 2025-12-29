@@ -18,9 +18,9 @@
 * **采集**: Linux V4L2 (Video for Linux 2)
 * **处理**: Rockchip RGA (2D Raster Graphic Acceleration)
 * **编码**: Rockchip MPP (Media Process Platform)
-* **推流**: RTMP / RTSP (计划中)
+* **推流**: SRT(MediaMTX)
 
-## 📅 开发路线图 (Roadmap)
+## 开发路线
 
 - [x] **V4L2 基础采集**
     - [x] 支持设备枚举与 Capability 查询
@@ -30,15 +30,15 @@
     - [x] 引入 librga 库
     - [x] 实现 YUYV -> NV12 的硬件格式转换
     - [x] 验证转换结果 (无花屏/绿屏)
-- [x] **MPP 硬件编码** (Current Focus 🚧)
+- [x] **MPP 硬件编码** 
     - [x] MPP 编码器初始化 (H.264)
     - [x] 实现 NV12 数据输入与 Packet 输出
     - [x] 保存 H.264 裸流文件并播放验证
-- [ ] **网络推流**
-    - [ ] 集成 RTMP 库 (librtmp/FFmpeg)
-    - [ ] 实现 H.264 NALU 封装与发送
-- [ ] **性能优化**
-    - [ ] 实现全链路零拷贝 (V4L2 -> RGA -> MPP -> Network)
+- [x] **网络推流**
+    - [x] 集成 SRT 库 (libsrt)
+    - [x] 实现 H.264 NALU 封装与发送
+- [x] **性能优化**
+    - [x] 实现全链路零拷贝 (V4L2 -> RGA -> MPP -> Network)
 
 ## 🛠️ 编译与运行
 
