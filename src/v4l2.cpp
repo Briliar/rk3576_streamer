@@ -25,7 +25,6 @@ int query_device_info(const char* dev_name) {
     cout << "成功打开设备: " << dev_name << " (fd=" << fd << ")" << endl;
 
     // 2. 查询设备能力 (Capability)
-    // 就像问设备：“你是谁？你能干什么？”
     struct v4l2_capability cap;
     memset(&cap, 0, sizeof(cap));
     
@@ -53,7 +52,6 @@ int query_device_info(const char* dev_name) {
     }
 
     // 3. 枚举支持的像素格式
-    // 就像问设备：“你支持输出什么样的照片？jpg还是原生raw？”
     cout << "---------------------------------" << endl;
     cout << "支持的像素格式:" << endl;
 
@@ -127,9 +125,7 @@ int open_camera(int fd, int width, int height) {
     *(int*)fourcc = fmt.fmt.pix.pixelformat;
     cout << ">> [V4L2] 像素格式: " << fourcc << endl;
 
-    // if (fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_NV12) {
-    //     cout << "⚠️ 警告: 摄像头未匹配 NV12，这可能导致 MPP 无法零拷贝！" << endl;
-    // }
+   
 
     // 3. 设置帧率 (30 FPS)
     struct v4l2_streamparm streamparm;
@@ -259,7 +255,7 @@ int start_capturing(int fd, int buffer_count) {
         perror("STREAMON (开启流) 失败");
         return -1;
     }
-    std::cout << ">> [V4L2] 视频流已开启 (STREAMON) 🚀" << std::endl;
+    std::cout << ">> [V4L2] 视频流已开启 (STREAMON)" << std::endl;
     return 0;
 }
 
@@ -327,7 +323,7 @@ int return_frame(int fd, int index) {
  */
 void run_capture_test(int fd, int w, int h, int count, const char* filename) {
     cout << "==================================================" << endl;
-    cout << "🧪 开始测试: " << filename << " (" << w << "x" << h << ")" << endl;
+    cout << "开始测试: " << filename << " (" << w << "x" << h << ")" << endl;
 
     // 1. 打开设备
     open_camera(fd, w, h);
@@ -351,7 +347,7 @@ void run_capture_test(int fd, int w, int h, int count, const char* filename) {
     // 4. 打开文件
     FILE* fp = fopen(filename, "wb");
     if (!fp) {
-        perror("❌ 无法创建文件");
+        perror("无法创建文件");
         stop_capturing(fd);
         release_buffers(buffers, n_buffers);
         close(fd);
@@ -363,14 +359,14 @@ void run_capture_test(int fd, int w, int h, int count, const char* filename) {
     for (int i = 0; i < count; ++i) {
         int index = wait_and_get_frame(fd);
         if (index < 0) {
-            cerr << "⚠️ 丢帧或超时" << endl;
+            cerr << "丢帧或超时" << endl;
             continue;
         }
 
         // 写入文件
         size_t written = fwrite(buffers[index].start, 1, buffers[index].length, fp);
         if (written != buffers[index].length) {
-            cerr << "⚠️ 写入不完整" << endl;
+            cerr << "写入不完整" << endl;
         }
 
         // 打印进度条
@@ -388,6 +384,6 @@ void run_capture_test(int fd, int w, int h, int count, const char* filename) {
     release_buffers(buffers, n_buffers);
     close(fd);
 
-    cout << "✅ 测试结束！成功保存 " << success_count << " 帧到 " << filename << endl;
+    cout << "测试结束！成功保存 " << success_count << " 帧到 " << filename << endl;
     cout << "==================================================" << endl;
 }

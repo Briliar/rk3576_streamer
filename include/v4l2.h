@@ -1,6 +1,4 @@
-#ifndef V4L2_H
-#define V4L2_H
-
+#pragma once
 #include <linux/videodev2.h> // 为了能引用 v4l2_buffer 类型
 
 // 自定义结构体：描述一个图像缓冲区
@@ -30,4 +28,3 @@ int return_frame(int fd, int index);
 // 新增：释放资源
 void run_capture_test(int fd, int w, int h, int count, const char* filename);
 void release_buffers(CameraBuffer* buffers, int count);
-#endif // V4L2_H

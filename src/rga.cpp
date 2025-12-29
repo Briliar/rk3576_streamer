@@ -25,7 +25,7 @@ int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
     // 这里使用 wrapbuffer_fd，必须传入 fd
     rga_buffer_t dst = wrapbuffer_fd(dst_fd, width, height, RK_FORMAT_YCbCr_420_SP);
     
-    // 【重点】这里也要对齐，虽然 720P 不需要，但保持习惯
+    // 这里也要对齐，虽然 720P 不需要，但保持习惯
     dst.wstride = (width + 15) & (~15);
     dst.hstride = (height + 15) & (~15);
 
@@ -33,7 +33,7 @@ int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
 }
 
 void run_convert_test(int fd, int w, int h, int count, const char* filename) {
-    cout << "🧪 开始 RGA 转码测试: YUYV -> NV12 (使用 MPP 内存)" << endl;
+    cout << " 开始 RGA 转码测试: YUYV -> NV12 (使用 MPP 内存)" << endl;
 
     // 1. 打开设备 (修正了之前的调用方式)
     open_camera(fd, w, h);
@@ -54,7 +54,7 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     // 我们利用它来分配一块 RGA 喜欢的物理连续内存
     MppEncoder encoder;
     if (encoder.init(w, h, 30) < 0) { // 帧率随便填，只为分配内存
-        cerr << "❌ 内存分配失败" << endl;
+        cerr << " 内存分配失败" << endl;
     }
     
     // 获取这块内存的关键信息
@@ -101,5 +101,5 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     release_buffers(buffers, n_buffers);
     close(fd);
     
-    cout << "✅ RGA 测试结束！请查看 " << filename << endl;
+    cout << "RGA 测试结束！请查看 " << filename << endl;
 }

@@ -1,5 +1,4 @@
 #pragma once
-
 #include <rockchip/rk_mpi.h>
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_meta.h>
@@ -30,8 +29,10 @@ public:
      */
     int encode(FILE* out_fp);
 
+    int encode_to_memory(void** out_data, size_t* out_len, bool* is_key);
+
     void* get_input_ptr();
-    
+
     /**
      * @brief 销毁资源
      */
@@ -51,4 +52,4 @@ private:
     MppBuffer shared_input_buf = nullptr;
 };
 
-void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* filename);
+void run_encoder_test(int fd, int w, int h, int frame_count,const char* filename);

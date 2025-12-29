@@ -1,3 +1,4 @@
+#pragma once
 #include <rga/im2d.h> // RGA 的核心头文件
 #include <rga/RgaApi.h>
 

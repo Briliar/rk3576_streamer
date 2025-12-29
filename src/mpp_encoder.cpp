@@ -23,10 +23,10 @@ int MppEncoder::init(int w, int h, int fps) {
 
     // 1. 创建上下文
     ret = mpp_create(&ctx, &mpi);
-    if (ret != MPP_OK) { cerr << "❌ mpp_create failed" << endl; return -1; }
+    if (ret != MPP_OK) { cerr << "mpp_create failed" << endl; return -1; }
 
     ret = mpp_init(ctx, MPP_CTX_ENC, MPP_VIDEO_CodingAVC); // H.264
-    if (ret != MPP_OK) { cerr << "❌ mpp_init failed" << endl; return -1; }
+    if (ret != MPP_OK) { cerr << "mpp_init failed" << endl; return -1; }
 
     // 2. 配置参数 (分辨率、码率)
     ret = mpp_enc_cfg_init(&cfg);
@@ -53,14 +53,24 @@ int MppEncoder::init(int w, int h, int fps) {
     mpp_enc_cfg_set_s32(cfg, "rc:gop", fps * 2);
 
     ret = mpi->control(ctx, MPP_ENC_SET_CFG, cfg);
-    if (ret != MPP_OK) { cerr << "❌ mpp config failed" << endl; return -1; }
-
-    // 3. 【核心】申请 MPP 专用内存 (NV12大小)
+    if (ret != MPP_OK) { cerr << "mpp config failed" << endl; return -1; }
+    // 设置每个 IDR 帧都带 SPS/PPS
+    MppEncHeaderMode header_mode = MPP_ENC_HEADER_MODE_EACH_IDR;
+    ret = mpi->control(ctx, MPP_ENC_SET_HEADER_MODE, &header_mode);
+    if (ret) {
+        std::cerr << ">>[MPP] mpi control enc set header mode failed: " << ret << std::endl;
+        return -1;
+    }
+    
+    // 顺便确保一下 SEI 模式（可选，有时能提高兼容性）
+    MppEncSeiMode sei_mode = MPP_ENC_SEI_MODE_ONE_FRAME;
+    mpi->control(ctx, MPP_ENC_SET_SEI_CFG, &sei_mode);
+    // 申请 MPP 专用内存 (NV12大小)
     size_t frame_size = hor_stride * ver_stride * 3 / 2;
     ret = mpp_buffer_get(NULL, &shared_input_buf, frame_size);
-    if (ret != MPP_OK) { cerr << "❌ mpp buffer alloc failed" << endl; return -1; }
+    if (ret != MPP_OK) { cerr << "mpp buffer alloc failed" << endl; return -1; }
 
-    cout << "✅ [MPP] Init Success. FD=" << mpp_buffer_get_fd(shared_input_buf) 
+    cout << ">> [MPP] 初始化成功！ FD=" << mpp_buffer_get_fd(shared_input_buf) 
          << " Size=" << frame_size << endl;
 
     return 0;
@@ -95,14 +105,14 @@ int MppEncoder::encode(FILE* out_fp) {
     mpp_frame_deinit(&frame); // 提交后即可释放 frame 结构体引用
 
     if (ret != MPP_OK) {
-        cerr << "❌ encode_put_frame error" << endl;
+        cerr << "encode_put_frame error" << endl;
         return -1;
     }
 
     // 3. 取出编码包
     ret = mpi->encode_get_packet(ctx, &packet);
     if (ret != MPP_OK) {
-        cerr << "❌ encode_get_packet error" << endl;
+        cerr << "encode_get_packet error" << endl;
         return -1;
     }
 
@@ -121,6 +131,80 @@ int MppEncoder::encode(FILE* out_fp) {
 
     return -1; 
 }
+
+int MppEncoder::encode_to_memory(void** out_data, size_t* out_len, bool* is_key) {
+    if (!ctx || !mpi || !shared_input_buf) return -1;
+
+    MPP_RET ret = MPP_OK;
+    MppFrame frame = nullptr;
+    MppPacket packet = nullptr;
+
+    // 1. 包装 Frame (复用 shared_input_buf)
+    mpp_frame_init(&frame);
+    mpp_frame_set_width(frame, width);
+    mpp_frame_set_height(frame, height);
+    mpp_frame_set_hor_stride(frame, MPP_ALIGN(width, 16));
+    mpp_frame_set_ver_stride(frame, MPP_ALIGN(height, 16));
+    mpp_frame_set_fmt(frame, MPP_FMT_YUV420SP);
+    mpp_frame_set_buffer(frame, shared_input_buf);
+    mpp_frame_set_eos(frame, 0);
+
+    // 2. 送入编码器
+    ret = mpi->encode_put_frame(ctx, frame);
+    mpp_frame_deinit(&frame); // 提交后即可释放 frame 结构体引用
+
+    if (ret != MPP_OK) {
+        cerr << "encode_put_frame error" << endl;
+        return -1;
+    }
+
+   
+    ret = mpi->encode_get_packet(ctx, &packet);
+    
+    if (ret == MPP_OK && packet) {
+        void* ptr = mpp_packet_get_pos(packet);
+        size_t len = mpp_packet_get_length(packet);
+        
+        //  检查是否是结束包或空包
+        if (len > 0) {
+            // 深拷贝！
+            // 因为我们要马上调用 mpp_packet_deinit，所以必须把数据拷出来
+            *out_data = malloc(len); // 分配新内存
+            if (*out_data) {
+                memcpy(*out_data, ptr, len);
+                *out_len = len;
+                if (is_key) {
+                MppMeta meta = mpp_packet_get_meta(packet);
+                RK_S32 is_intra = 0;
+                
+                // 从元数据中读取 "OUTPUT_INTRA" 标记
+                if (meta) {
+                    mpp_meta_get_s32(meta, KEY_OUTPUT_INTRA, &is_intra);
+                }
+                
+                // 如果是 IDR 帧，MPP 会把 is_intra 置为 1
+                *is_key = (is_intra != 0);
+            }
+            } else {
+                *out_len = 0;
+            }
+        } else {
+            *out_data = nullptr;
+            *out_len = 0;
+        }
+
+        // 归还 Packet 给 MPP
+        mpp_packet_deinit(&packet); 
+        
+        return (*out_len > 0) ? 0 : -1;
+        
+       
+        return 0;
+    }
+
+    return -1; 
+}
+
 void* MppEncoder::get_input_ptr() {
     if (shared_input_buf) {
         return mpp_buffer_get_ptr(shared_input_buf);
@@ -145,9 +229,9 @@ void MppEncoder::deinit() {
 /**
  * @brief 全链路测试: Camera -> RGA -> MPP -> File
  */
-void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* filename) {
+void run_encoder_test(int fd, int w, int h, int frame_count,const char* filename) {
    // const char* filename = "output.h264";
-    cout << "🎬 启动全链路录制测试..." << endl;
+    cout << "启动全链路录制测试..." << endl;
     //cout << "   Source: " << dev_name << " (" << w << "x" << h << ")" << endl;
     cout << "   Target: " << filename << endl;
 
@@ -169,7 +253,7 @@ void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* f
     // 3. MPP Init (使用封装类)
     MppEncoder encoder;
     if (encoder.init(w, h, 30) < 0) {
-        cerr << "❌ MPP Encoder 初始化失败" << endl;
+        cerr << "MPP Encoder 初始化失败" << endl;
         return;
     }
 
@@ -196,10 +280,10 @@ void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* f
             // 数据已经在 dst_fd 里了，直接调用 encode 即可
             if (encoder.encode(fp) == 0) {
                 encoded_frames++;
-                cout << "🎥 已录制: " << encoded_frames << "/" << frame_count << "\r" << flush;
+                cout << "已录制: " << encoded_frames << "/" << frame_count << "\r" << flush;
             }
         } else {
-            cerr << "⚠️ RGA 转换失败 (丢帧)" << endl;
+            cerr << "RGA 转换失败 (丢帧)" << endl;
         }
 
         // D. 归还 V4L2 帧
@@ -214,5 +298,5 @@ void run_camera_encoder_test(int fd, int w, int h, int frame_count,const char* f
     release_buffers(buffers, n_buffers);
     close(fd);
 
-    cout << "✅ 测试结束! 文件已保存: " << filename << endl;
+    cout << "测试结束! 文件已保存: " << filename << endl;
 }

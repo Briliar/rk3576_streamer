@@ -22,3 +22,7 @@ Makefile
 .vscode/
 .idea/
 *.swp
+
+include/config.h
+
+
