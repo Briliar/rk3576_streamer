@@ -50,7 +50,7 @@ int MppEncoder::init(int w, int h, int fps) {
     mpp_enc_cfg_set_s32(cfg, "rc:bps_min", bps * 0.8);
     mpp_enc_cfg_set_s32(cfg, "rc:fps_in_num", fps);
     mpp_enc_cfg_set_s32(cfg, "rc:fps_out_num", fps);
-    mpp_enc_cfg_set_s32(cfg, "rc:gop", fps * 2);
+    mpp_enc_cfg_set_s32(cfg, "rc:gop", fps);
 
     ret = mpi->control(ctx, MPP_ENC_SET_CFG, cfg);
     if (ret != MPP_OK) { cerr << "mpp config failed" << endl; return -1; }

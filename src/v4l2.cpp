@@ -136,6 +136,9 @@ int open_camera(int fd, int width, int height) {
 
     if (ioctl(fd, VIDIOC_S_PARM, &streamparm) == 0) {
         cout << ">> [V4L2] 帧率设置成功" << endl;
+        printf(">> [V4L2] 最终驱动帧率: %u/%u fps\n", 
+           streamparm.parm.capture.timeperframe.denominator,
+           streamparm.parm.capture.timeperframe.numerator);
     }
     return 0;
 }

@@ -50,7 +50,7 @@ void network_thread_func(string ip, int port, string stream_id) {
     };
 
     // 初始化
-    if (muxer.init(1280, 720, 30, send_callback) < 0) {
+    if (muxer.init(WIDTH, HEIGHT, FPS, send_callback) < 0) {
         cerr << ">>[TSMUXER] TS Muxer 初始化失败" << endl;
         return;
     }
@@ -85,9 +85,8 @@ int main(int argc, char **argv) {
     //run_convert_test(fd, 1280, 720, 120, "output_1280x720.nv12");
     //run_encoder_test(fd, 1280, 720,300,"output.h264");
 
-    int w = 1280; int h = 720; int fps = 30;
 
-    open_camera(fd, w, h);
+    open_camera(fd, WIDTH, HEIGHT);
 
     int n_buffers = 8;
     CameraBuffer* buffers = map_buffers(fd, &n_buffers);
@@ -98,7 +97,7 @@ int main(int argc, char **argv) {
 
     // 3. 初始化 MPP
     MppEncoder encoder;
-    if (encoder.init(w, h, fps) < 0) return -1;
+    if (encoder.init(WIDTH, HEIGHT, FPS) < 0) return -1;
 
     // 4. 启动 SRT 发送线程
     std::thread net_thread(network_thread_func, SERVER_IP, SERVER_PORT, STREAM_KEY);
@@ -116,7 +115,7 @@ int main(int argc, char **argv) {
         if (index < 0) continue;
         //printf(">> [推流中] index: %d\n", index);
         // A. RGA: V4L2(FD) -> MPP(FD)
-        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder.get_input_fd(), w, h);
+        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder.get_input_fd(), WIDTH, HEIGHT);
 
         return_frame(fd, index);
 
