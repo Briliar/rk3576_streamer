@@ -16,7 +16,7 @@ int init_rga() {
 
 
 int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
-    // 1. SRC (V4L2) - 记得用你测试成功的格式 (UYVY 或 YUYV)
+    // 1. SRC (V4L2) 
     rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422); 
     src.wstride = width;
     src.hstride = height;
@@ -26,8 +26,8 @@ int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
     rga_buffer_t dst = wrapbuffer_fd(dst_fd, width, height, RK_FORMAT_YCbCr_420_SP);
     
     // 这里也要对齐，虽然 720P 不需要，但保持习惯
-    dst.wstride = (width + 15) & (~15);
-    dst.hstride = (height + 15) & (~15);
+    // dst.wstride = (width + 15) & (~15);
+    // dst.hstride = (height + 15) & (~15);
 
     return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1;
 }

@@ -18,6 +18,8 @@ pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
 
+find_package(ALSA REQUIRED)
+
 include_directories(
     ${AVCODEC_INCLUDE_DIRS}
     ${AVFORMAT_INCLUDE_DIRS}
@@ -41,6 +43,8 @@ target_link_libraries(rk3576_streamer
     srt           # SRT 协议支持
     pthread         # 多线程
     dl              # 动态加载
+    ALSA::ALSA          # ALSA 音频支持
+    faac         # AAC 编码库
 )
 
 # 编译选项

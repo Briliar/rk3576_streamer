@@ -318,7 +318,6 @@ int return_frame(int fd, int index) {
 
 /**
  * @brief 封装好的测试函数：抓取指定数量的帧并保存为文件
- * * @param dev_name 设备路径 (如 /dev/video0)
  * @param w        宽度
  * @param h        高度
  * @param count    抓取多少帧
