@@ -100,7 +100,7 @@ void audio_thread_func() {
     std::vector<uint8_t> aac_buf;
 
     std::cout << ">>[ALSA] 音频采集线程已启动" << std::endl;
-
+    const float volume_scale = 5.0f; // 音量放大倍数
     while (is_running) {
         // A. 抓取 (阻塞)
         int frames = capture.read_frame(pcm_buf.data());

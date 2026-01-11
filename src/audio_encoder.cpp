@@ -22,8 +22,8 @@ int AudioEncoder::init(int sample_rate, int channels) {
     // 3. 设置输入格式为 16位 (跟 ALSA 一致)
     conf->inputFormat = FAAC_INPUT_16BIT;
     
-    // 4. 【关键】设置输出格式为 ADTS
-    // 0 = Raw (裸流，不能直接播), 1 = ADTS (带头信息，可以直接播/封装TS)
+    // 4. 设置输出格式为 ADTS
+    // 0 = Raw , 1 = ADTS
     conf->outputFormat = 1; 
 
     // 5. 应用配置
