@@ -10,7 +10,7 @@
 #include <vector>
 #include <sys/select.h>
 #include <sys/time.h>
-#include "v4l2.h"
+#include "video/v4l2.h"
 
 
 using namespace std;

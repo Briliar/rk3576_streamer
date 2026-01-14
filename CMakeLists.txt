@@ -17,7 +17,6 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
-
 find_package(ALSA REQUIRED)
 
 include_directories(
@@ -27,7 +26,7 @@ include_directories(
     include
 )
 # 4. 查找源文件
-file(GLOB SOURCES "src/*.cpp")
+file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 # 5. 生成可执行文件
 add_executable(rk3576_streamer ${SOURCES})

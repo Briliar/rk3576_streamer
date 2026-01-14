@@ -1,6 +1,6 @@
-#include "rga.h"
-#include "v4l2.h"
-#include "mpp_encoder.h"
+#include "video/rga.h"
+#include "video/v4l2.h"
+#include "video/mpp_encoder.h"
 #include <iostream>
 #include <cstring>
 

@@ -7,15 +7,15 @@
 #include <sys/ioctl.h>  // 用于 ioctl (核心)
 #include <linux/videodev2.h> // V4L2 的标准头文件
 #include <cstring>      // 用于 memset
-#include "v4l2.h"
-#include "rga.h"
-#include "mpp_encoder.h"
+#include "video/v4l2.h"
+#include "video/rga.h"
+#include "video/mpp_encoder.h"
 #include "safe_queue.h"
-#include "srt_pusher.h"
-#include "ts_muxer.h"
+#include "network/srt_pusher.h"
+#include "network/ts_muxer.h"
 #include "config.h"
-#include "audio_capture.h"
-#include "audio_encoder.h"
+#include "audio/audio_capture.h"
+#include "audio/audio_encoder.h"
 using namespace std;
 
 // ---------------------------------------------------------
