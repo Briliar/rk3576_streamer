@@ -18,16 +18,12 @@ int init_rga() {
 int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
     // 1. SRC (V4L2) 
     rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422); 
-    src.wstride = width;
-    src.hstride = height;
+    
 
     // 2. DST (MPP FD)
     // 这里使用 wrapbuffer_fd，必须传入 fd
     rga_buffer_t dst = wrapbuffer_fd(dst_fd, width, height, RK_FORMAT_YCbCr_420_SP);
     
-    // 这里也要对齐，虽然 720P 不需要，但保持习惯
-    // dst.wstride = (width + 15) & (~15);
-    // dst.hstride = (height + 15) & (~15);
 
     return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1;
 }
@@ -102,4 +98,20 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     close(fd);
     
     cout << "RGA 测试结束！请查看 " << filename << endl;
+}
+
+int rga_convert(void* src_ptr, int src_fd, int src_w, int src_h, int src_fmt,
+                void* dst_ptr, int dst_fd, int dst_w, int dst_h, int dst_fmt) {
+
+    rga_buffer_t src, dst;
+    
+    // 封装源 buffer
+    if (src_fd > 0) src = wrapbuffer_fd(src_fd, src_w, src_h, src_fmt);
+    else            src = wrapbuffer_virtualaddr(src_ptr, src_w, src_h, src_fmt);
+
+    // 封装目的 buffer
+    if (dst_fd > 0) dst = wrapbuffer_fd(dst_fd, dst_w, dst_h, dst_fmt);
+    else            dst = wrapbuffer_virtualaddr(dst_ptr, dst_w, dst_h, dst_fmt);
+
+    return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1; // 执行拷贝/缩放/格式转换
 }

@@ -16,6 +16,8 @@
 #include "config.h"
 #include "audio/audio_capture.h"
 #include "audio/audio_encoder.h"
+#include "yolov8/YoloDetector.h"
+#include <opencv2/opencv.hpp> // OpenCV 头文件
 using namespace std;
 
 // ---------------------------------------------------------
@@ -24,6 +26,13 @@ using namespace std;
 MediaPacketQueue packet_queue(60); // 缓存队列，最多存60帧
 bool is_running = true;
 uint32_t start_time = 0;// 推流开始时间戳
+
+const int STREAM_W = 1280;   // 推流宽 (高清)
+const int STREAM_H = 720;    // 推流高
+const int AI_W = 640;        // 模型宽 (固定)
+const int AI_H = 640;        // 模型高 (固定)
+const char* MODEL_PATH = "model/yolov8.rknn"; // 模型路径
+
 // 获取时间戳
 uint32_t get_time_ms() {
     struct timeval tv;
@@ -161,6 +170,18 @@ int main(int argc, char **argv) {
     std::thread audio_thread(audio_thread_func);
     audio_thread.detach();
 
+    YoloDetector* detector = new YoloDetector();
+    if (detector->init(MODEL_PATH) != 0) {
+        printf(">>[Yolo]  AI Init Failed! Check model path.\n");
+        return -1;
+    }
+    else   printf(">>[Yolo] Yolo已加载成功\n");  
+    // 1. AI 输入 Buffer (640x640, RGB888)
+    void* ai_buf_addr = malloc(AI_W * AI_H * 3);
+    
+    // 2. OpenCV 画图 Buffer (1280x720, RGB888)
+    void* draw_buf_addr = malloc(WIDTH * HEIGHT * 3);
+
     long long last_log_time = get_time_ms();
     int frame_count = 0;
     int total_bytes = 0;
@@ -168,13 +189,52 @@ int main(int argc, char **argv) {
     while (is_running) {
         int index = wait_and_get_frame(fd);
         if (index < 0) continue;
-        //printf(">> [推流中] index: %d\n", index);
         // A. RGA: V4L2(FD) -> MPP(FD)
-        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder.get_input_fd(), WIDTH, HEIGHT);
+        // int rga_ret = rga_convert(
+        //     nullptr, buffers[index].export_fd, WIDTH, HEIGHT,RK_FORMAT_YUYV_422,
+        //     nullptr, encoder.get_input_fd(), WIDTH, HEIGHT, RK_FORMAT_YCbCr_420_SP
+        // );
+        //int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder.get_input_fd(), WIDTH, HEIGHT);
+        // 1. [RGA] V4L2 -> AI Buffer (缩放至 640x640, 转 RGB)
+        rga_convert(nullptr, buffers[index].export_fd, WIDTH, HEIGHT, RK_FORMAT_YUYV_422,
+                    ai_buf_addr, -1, AI_W, AI_H, RK_FORMAT_RGB_888);
 
+        // 2. [YOLO] 推理
+        std::vector<Object> objects = detector->detect(ai_buf_addr);
+
+        // 3. [RGA] V4L2 -> Draw Buffer (转 RGB, 保持 720P)
+        rga_convert(nullptr, buffers[index].export_fd, WIDTH, HEIGHT, RK_FORMAT_YUYV_422,
+                    draw_buf_addr, -1, WIDTH, HEIGHT, RK_FORMAT_RGB_888);
+
+        // 4. [OpenCV] 画框
+        cv::Mat frame_rgb(HEIGHT, WIDTH, CV_8UC3, draw_buf_addr);
+        
+        float scale_x = (float)WIDTH / AI_W;
+        float scale_y = (float)HEIGHT / AI_H;
+
+        for (auto& obj : objects) {
+            int x = obj.x * scale_x;
+            int y = obj.y * scale_y;
+            int w = obj.w * scale_x;
+            int h = obj.h * scale_y;
+            
+            x = max(0, x); y = max(0, y);
+            if (x + w > WIDTH) w = WIDTH - x;
+            if (y + h > HEIGHT) h = HEIGHT - y;
+
+            // 画绿色框
+            cv::rectangle(frame_rgb, cv::Rect(x, y, w, h), cv::Scalar(0, 255, 0), 2);
+            string label = obj.label + " " + to_string(obj.prob).substr(0, 3);
+            cv::putText(frame_rgb, label, cv::Point(x, y - 5), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+        }
+
+        // 5. [RGA] Draw Buffer -> MPP (RGB 转回 NV12 供编码)
+        rga_convert(draw_buf_addr, -1, WIDTH, HEIGHT, RK_FORMAT_RGB_888,
+                    nullptr, encoder.get_input_fd(), WIDTH, HEIGHT, RK_FORMAT_YCbCr_420_SP);
         return_frame(fd, index);
 
-        if (rga_ret == 0) {
+       // if (rga_ret == 0) {
             
             // B. MPP: 编码
             //printf(">> [推流中] 执行编码...\n");
@@ -192,7 +252,7 @@ int main(int argc, char **argv) {
                 frame_count++;
                 total_bytes += enc_len;
             }
-        }
+        //}
         // 每隔一秒打印一次状态
         long long now = get_time_ms();
         if (now - last_log_time >= 1000) {

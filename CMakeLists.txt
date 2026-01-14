@@ -12,17 +12,23 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # 板子上的 MPP 头文件通常在 /usr/include/rockchip
 include_directories(/usr/include/rockchip)
 include_directories(/usr/include/libdrm)
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/rknn)
+include_directories(/usr/include/rkaiq)
+find_library(RKNN_LIB rknnrt)
 # 查找 FFmpeg 库
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
 find_package(ALSA REQUIRED)
+find_package(OpenCV REQUIRED)
+
 
 include_directories(
     ${AVCODEC_INCLUDE_DIRS}
     ${AVFORMAT_INCLUDE_DIRS}
     ${AVUTIL_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     include
 )
 # 4. 查找源文件
@@ -44,6 +50,8 @@ target_link_libraries(rk3576_streamer
     dl              # 动态加载
     ALSA::ALSA          # ALSA 音频支持
     faac         # AAC 编码库
+    ${RKNN_LIB}  # RKNN 库
+    ${OpenCV_LIBS} # OpenCV 库
 )
 
 # 编译选项

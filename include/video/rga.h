@@ -13,6 +13,10 @@ int init_rga();
  * @param height    高
  * @return int      0 成功, -1 失败
  */
-//int convert_yuyv_to_nv12(int src_fd, void* dst_ptr, int width, int height);
+
 void run_convert_test(int fd, int w, int h, int count, const char* filename);
+
 int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height);
+
+int rga_convert(void* src_ptr, int src_fd, int src_w, int src_h, int src_fmt,
+                void* dst_ptr, int dst_fd, int dst_w, int dst_h, int dst_fmt);
