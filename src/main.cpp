@@ -100,7 +100,6 @@ void audio_thread_func() {
     std::vector<uint8_t> aac_buf;
 
     std::cout << ">>[ALSA] 音频采集线程已启动" << std::endl;
-    const float volume_scale = 5.0f; // 音量放大倍数
     while (is_running) {
         // A. 抓取 (阻塞)
         int frames = capture.read_frame(pcm_buf.data());
@@ -156,7 +155,7 @@ int main(int argc, char **argv) {
     start_time = get_time_ms();
     // 4. 启动 SRT 发送线程
     std::thread net_thread(network_thread_func, SERVER_IP, SERVER_PORT, STREAM_KEY);
-    net_thread.detach(); // 让它在后台跑
+    net_thread.detach(); 
     cout << ">>[SRT] 推流启动: " << SERVER_IP << " -> " << STREAM_KEY << endl;
     // 5. 启动音频采集线程
     std::thread audio_thread(audio_thread_func);
