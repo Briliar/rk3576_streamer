@@ -5,12 +5,12 @@
 using namespace std;
 
 SrtPusher::SrtPusher() {
-    srt_startup();
+    // srt_startup(); // 移至 main.cpp 全局调用
 }
 
 SrtPusher::~SrtPusher() {
     close();
-    srt_cleanup();
+    // srt_cleanup(); // 移至 main.cpp 全局调用
 }
 
 int SrtPusher::connect(const std::string& ip, int port, const std::string& stream_id) {

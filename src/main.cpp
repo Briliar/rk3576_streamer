@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <csignal>
 #include <sys/time.h>
 #include <fcntl.h>      // 用于 open 函数
 #include <unistd.h>     // 用于 close 函数
@@ -12,6 +13,7 @@
 #include "video/mpp_encoder.h"
 #include "safe_queue.h"
 #include "network/srt_pusher.h"
+#include <srt/srt.h> // 添加 libsrt 头文件用于初始化
 #include "network/ts_muxer.h"
 #include "config.h"
 #include "audio/audio_capture.h"
@@ -22,13 +24,21 @@ using namespace std;
 // 全局变量
 // ---------------------------------------------------------
 MediaPacketQueue packet_queue(60); // 缓存队列，最多存60帧
-bool is_running = true;
+volatile sig_atomic_t is_running = 1; // 控制程序运行的标志
 uint32_t start_time = 0;// 推流开始时间戳
+
 // 获取时间戳
 uint32_t get_time_ms() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (uint32_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+void signal_handler(int signum) {
+    if (signum == SIGINT || signum == SIGTERM) {
+        is_running = 0;
+        cout << ">>[系统] 收到退出信号，正在关闭..." << endl;
+    }
 }
 
 // ---------------------------------------------------------
@@ -125,12 +135,12 @@ void audio_thread_func() {
     std::cout << ">>[ALSA] 音频线程退出" << std::endl;
 }
 int main(int argc, char **argv) {
-    // if (argc != 2)
-    // {
-    //     printf("Usage:\n");
-    //     printf("%s </dev/video0,1,...>\n", argv[0]);
-    //     return -1;
-    // }
+   
+   
+    // 注册信号处理函数
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
     const char* dev_name = "/dev/video0";
     int fd = open(dev_name, O_RDWR | O_NONBLOCK, 0);
     //int fd = query_device_info(dev_name);
@@ -150,16 +160,17 @@ int main(int argc, char **argv) {
     init_rga();
 
     // 3. 初始化 MPP
-    MppEncoder encoder;
-    if (encoder.init(WIDTH, HEIGHT, FPS) < 0) return -1;
+    MppEncoder* encoder = new MppEncoder();
+    if (encoder->init(WIDTH, HEIGHT, FPS) < 0) return -1;
     start_time = get_time_ms();
     // 4. 启动 SRT 发送线程
+    srt_startup();
     std::thread net_thread(network_thread_func, SERVER_IP, SERVER_PORT, STREAM_KEY);
-    net_thread.detach(); 
+    //net_thread.detach(); 
     cout << ">>[SRT] 推流启动: " << SERVER_IP << " -> " << STREAM_KEY << endl;
     // 5. 启动音频采集线程
     std::thread audio_thread(audio_thread_func);
-    audio_thread.detach();
+    //audio_thread.detach();
 
     long long last_log_time = get_time_ms();
     int frame_count = 0;
@@ -170,7 +181,7 @@ int main(int argc, char **argv) {
         if (index < 0) continue;
         //printf(">> [推流中] index: %d\n", index);
         // A. RGA: V4L2(FD) -> MPP(FD)
-        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder.get_input_fd(), WIDTH, HEIGHT);
+        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder->get_input_fd(), WIDTH, HEIGHT);
 
         return_frame(fd, index);
 
@@ -182,9 +193,9 @@ int main(int argc, char **argv) {
             size_t enc_len = 0;
             bool is_key = false; 
 
-            if (encoder.encode_to_memory(&enc_data, &enc_len, &is_key) == 0) {
+            if (encoder->encode_to_memory(&enc_data, &enc_len, &is_key) == 0) {
                // printf(">> [推流中] 编码得到 %zu 字节数据\n", enc_len);
-               if (is_key) printf(">> [推流中] 这是一个关键帧 (IDR)\n");
+               if (is_key) printf(">>[推流中] 这是一个关键帧 (IDR)\n");
                 // C. 推入队列 (非阻塞，极快)
                 // 这里发生了内存拷贝 (enc_data -> queue)，但对于 H264 来说数据量很小(几十KB)，不影响性能
                 packet_queue.push(enc_data, enc_len, get_time_ms() - start_time, is_key, MEDIA_VIDEO);
@@ -211,9 +222,24 @@ int main(int argc, char **argv) {
 
     // 清理
     packet_queue.stop();
-    stop_capturing(fd);
-    // ... release buffers ...
+
+    if (net_thread.joinable()) {
+        net_thread.join();
+        cout << ">>[系统] 网络线程已退出" << endl;
+    }
     
-    return 0;
+    if (audio_thread.joinable()) {
+        audio_thread.join();
+        cout << ">>[系统] 音频线程已退出" << endl;
+    }
+    packet_queue.clear();
+    delete encoder;
+    stop_capturing(fd);
+    release_buffers(buffers, n_buffers);
+    close(fd);
+    srt_cleanup();
+    cout << ">>[系统] 程序已退出" << endl;
+
+    _exit(0);
 }
 
