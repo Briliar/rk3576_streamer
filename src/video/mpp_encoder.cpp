@@ -236,7 +236,7 @@ void run_encoder_test(int fd, int w, int h, int frame_count,const char* filename
     cout << "   Target: " << filename << endl;
 
     // 1. V4L2 Init
-    open_camera(fd, w, h);
+    open_camera(fd, w, h, 30);
     if (fd < 0) return;
 
     int n_buffers = 4;

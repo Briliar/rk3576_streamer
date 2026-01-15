@@ -98,8 +98,7 @@ int query_device_info(const char* dev_name) {
     return fd;
 }
 
-int open_camera(int fd, int width, int height) {
-
+int open_camera(int fd, int width, int height,int fps) {
 
     // 2. 设置格式 (VIDIOC_S_FMT)
     struct v4l2_format fmt;
@@ -132,7 +131,7 @@ int open_camera(int fd, int width, int height) {
     memset(&streamparm, 0, sizeof(streamparm));
     streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     streamparm.parm.capture.timeperframe.numerator = 1;
-    streamparm.parm.capture.timeperframe.denominator = 30;
+    streamparm.parm.capture.timeperframe.denominator = fps;
 
     if (ioctl(fd, VIDIOC_S_PARM, &streamparm) == 0) {
         cout << ">>[V4L2] 帧率设置成功" << endl;
@@ -280,7 +279,7 @@ int wait_and_get_frame(int fd) {
 
     int r = select(fd + 1, &fds, NULL, NULL, &tv);
     if (r == -1) {
-        perror(">>[V4L2] select 错误");
+       // perror(">>[V4L2] select 错误");
         return -1;
     } else if (r == 0) {
         std::cerr << ">>[V4L2] 等待帧超时 (Timeout)" << std::endl;
@@ -328,7 +327,7 @@ void run_capture_test(int fd, int w, int h, int count, const char* filename) {
     cout << "开始测试: " << filename << " (" << w << "x" << h << ")" << endl;
 
     // 1. 打开设备
-    open_camera(fd, w, h);
+    open_camera(fd, w, h, 30);
     if (fd < 0) return;
 
     // 2. 申请内存

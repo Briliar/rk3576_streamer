@@ -32,7 +32,7 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     cout << " 开始 RGA 转码测试: YUYV -> NV12 (使用 MPP 内存)" << endl;
 
     // 1. 打开设备 (修正了之前的调用方式)
-    open_camera(fd, w, h);
+    open_camera(fd, w, h, 30);
     if (fd < 0) return;
 
     int n_buffers = 4;
