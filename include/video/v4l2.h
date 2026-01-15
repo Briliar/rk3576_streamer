@@ -10,7 +10,7 @@ struct CameraBuffer {
 };
 
 int query_device_info(const char* dev_name);
-int open_camera(int fd, int width, int height);
+int open_camera(int fd, int width, int height,int fps);
 // 新增：申请并映射缓冲区
 // 参数：fd (摄像头描述符), count (想要申请几个，通常传指针以便返回实际申请数)
 // 返回值：返回一个 CameraBuffer 数组的首地址

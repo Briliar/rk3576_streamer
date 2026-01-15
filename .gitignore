@@ -12,7 +12,7 @@ out/
 *.dylib
 *.a
 
-# 忽略 CMake 产生的临时文件 (如果你不在 build 文件夹里编译)
+# 忽略 CMake 产生的临时文件 
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake

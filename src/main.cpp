@@ -1,245 +1,103 @@
-#include <iostream>
-#include <thread>
-#include <chrono>
-#include <csignal>
-#include <sys/time.h>
-#include <fcntl.h>      // 用于 open 函数
+#include <iostream>   
 #include <unistd.h>     // 用于 close 函数
-#include <sys/ioctl.h>  // 用于 ioctl (核心)
-#include <linux/videodev2.h> // V4L2 的标准头文件
-#include <cstring>      // 用于 memset
-#include "video/v4l2.h"
-#include "video/rga.h"
-#include "video/mpp_encoder.h"
-#include "safe_queue.h"
-#include "network/srt_pusher.h"
-#include <srt/srt.h> // 添加 libsrt 头文件用于初始化
-#include "network/ts_muxer.h"
+#include <termios.h>
+
+#include "StreamerApp.h"
 #include "config.h"
-#include "audio/audio_capture.h"
-#include "audio/audio_encoder.h"
-using namespace std;
 
-// ---------------------------------------------------------
-// 全局变量
-// ---------------------------------------------------------
-MediaPacketQueue packet_queue(60); // 缓存队列，最多存60帧
-volatile sig_atomic_t is_running = 1; // 控制程序运行的标志
-uint32_t start_time = 0;// 推流开始时间戳
+// 全局指针供信号处理使用
+StreamerApp* g_app = nullptr;
 
-// 获取时间戳
-uint32_t get_time_ms() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint32_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
-}
-
-void signal_handler(int signum) {
-    if (signum == SIGINT || signum == SIGTERM) {
-        is_running = 0;
-        cout << ">>[系统] 收到退出信号，正在关闭..." << endl;
+void sig_handler(int sig) {
+    if (g_app) {
+        printf("\n>>[Signal] 收到退出信号 (%d)\n", sig);
+        g_app->signalStop(); 
     }
 }
-
-// ---------------------------------------------------------
-// 子线程：SRT 发送线程 (消费者)
-// ---------------------------------------------------------
-void network_thread_func(string ip, int port, string stream_id) {
-    SrtPusher pusher;
-    
-    // 尝试连接
-    if (pusher.connect(ip, port, stream_id) < 0) {
-        cerr << ">>[SRT] 线程退出：无法连接服务器" << endl;
-        return;
+// 将终端设置为“即时读取模式” (不需要按回车)
+void setTerminalRawMode(bool enable) {
+    static struct termios oldt, newt;
+    if (enable) {
+        // 获取当前终端属性
+        tcgetattr(STDIN_FILENO, &oldt);
+        newt = oldt;
+        // 关闭 ICANON (规范模式，即缓冲模式) 和 ECHO (回显)
+        newt.c_lflag &= ~(ICANON | ECHO);
+        // 设置立刻读取
+        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    } else {
+        // 恢复原有属性
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     }
-    TsMuxer muxer;
-    
-    // 定义一个 Lambda 回调函数
-    // 当 Muxer 生成了 TS 数据包时，立刻调用 pusher 发送出去
-    auto send_callback = [&](void* data, int len) -> int {
-        return pusher.send(data, len);
-    };
+}
 
-    // 初始化
-    if (muxer.init(WIDTH, HEIGHT, FPS, 44100, 2, send_callback) < 0) {
-        cerr << ">>[TSMUXER] TS Muxer 初始化失败" << endl;
-        return;
-    }
-    MediaPacket packet;
-    while (is_running) {
-        // 从队列取包 (会阻塞，直到有数据)
-        if (packet_queue.pop(packet)) {
-            
-            // 发送数据
-            if (packet.type == MEDIA_VIDEO) {
-                muxer.write_video(packet.data, packet.size, packet.timestamp, packet.is_keyframe);
-            } 
-            else if (packet.type == MEDIA_AUDIO) {
-                muxer.write_audio(packet.data, packet.size, packet.timestamp);
+void keyboard_listener() {
+    printf(">>[Key] 键盘监听已启动 (按 'a' 切换AI, 'q' 退出)\n");
+    
+    while (true) {
+        // getchar 在 Raw 模式下会阻塞等待，但按键瞬间就会返回
+        char c = getchar();
+
+        if (g_app) {
+            if (c == 'a' || c == 'A') {
+                // 读取当前状态并取反
+                // 注意：这里我们需要给 StreamerApp 加一个 getAiEnabled 接口，
+                // 或者简单一点，我们在 StreamerApp 里加一个 toggleAiEnabled 函数
+                // 这里暂时假设我们自己维护一个状态，或者直接设置 true/false
+                
+                // 更加优雅的做法是在 App 里加一个 toggle 函数，这里我们演示传参：
+                // 我们可以用一个静态变量模拟 toggle，或者去 StreamerApp 加接口
+                static bool current_ai = false;
+                current_ai = !current_ai;
+                g_app->setAiEnabled(current_ai);
             }
-            // 【重要】释放队列里 malloc 的内存
-            free(packet.data);
+            else if (c == 'q' || c == 'Q') {
+                printf("\n>>[Key] 收到退出指令\n");
+                g_app->signalStop();
+                break; // 退出监听循环
+            }
         }
-    }
-    muxer.close();
-    pusher.close();
-}
-
-// ---------------------------------------------------------
-// 子线程：音频采集线程 (生产者 2)
-// ---------------------------------------------------------
-void audio_thread_func() {
-    AudioCapture capture;
-    AudioEncoder encoder;
-
-    // 1. 初始化
-   if (capture.init("default", 44100, 2) < 0) {
-        cerr << ">>[ALSA] 初始化失败，将只推视频流" << endl;
-        return;
-    }
-    
-    // 初始化 AAC 编码器
-    if (encoder.init(44100, 2) < 0) {
-        cerr << ">>[ALSA] 编码器初始化失败" << endl;
-        return;
-    }
-    uint64_t total_samples = 0; 
-    const int sample_rate = 44100;
-    // 2. 准备缓冲区
-    std::vector<char> pcm_buf(capture.get_buffer_size());
-    std::vector<uint8_t> aac_buf;
-
-    std::cout << ">>[ALSA] 音频采集线程已启动" << std::endl;
-    while (is_running) {
-        // A. 抓取 (阻塞)
-        int frames = capture.read_frame(pcm_buf.data());
         
-        if (frames > 0) {
-
-            // B. 编码
-            int aac_len = encoder.encode(pcm_buf.data(), aac_buf);
-            
-            if (aac_len > 0) {
-                // C. 计算时间戳
-                // 计算公式：(总点数 * 1000) / 采样率 = 当前时间的毫秒数
-                uint32_t pts = (uint32_t)(total_samples * 1000 / sample_rate);
-                // 累加计数器 (FAAC每帧消耗 1024 个点)
-                // 注意：这里加的是 input_samples (1024)，不是 frames
-                total_samples += 1024;
-                // D. 推入队列
-                // 注意：这里 type 必须填 MEDIA_AUDIO
-                packet_queue.push(aac_buf.data(), aac_len, pts, false, MEDIA_AUDIO);
-            }
-        }
+        // 防止 CPU 占用过高
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    std::cout << ">>[ALSA] 音频线程退出" << std::endl;
 }
-int main(int argc, char **argv) {
-   
-   
-    // 注册信号处理函数
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
 
-    const char* dev_name = "/dev/video0";
-    int fd = open(dev_name, O_RDWR | O_NONBLOCK, 0);
-    //int fd = query_device_info(dev_name);
-    // 测试代码
-    //run_capture_test(fd, 1280, 720, 120, "output_1280x720.yuv");
-    //run_convert_test(fd, 1280, 720, 120, "output_1280x720.nv12");
-    //run_encoder_test(fd, 1280, 720,300,"output.h264");
-    //run_audio_test();
+int main(int argc, char** argv) {
+    // 注册信号
+    signal(SIGINT, sig_handler);
+    signal(SIGTERM, sig_handler);
+
+    // 1. 创建应用实例
+    StreamerApp app;
+    g_app = &app;
+
+    // 2. 初始化
+    if (!app.init("/dev/video0",WIDTH, HEIGHT, FPS, "model/yolov8.rknn")) {
+        return -1;
+    }
+
+    // 3. 启动后台服务
+    app.start(SERVER_IP, SERVER_PORT, STREAM_KEY);
+
+    // 1. 先设置终端为 Raw 模式 (无回车，无回显)
+    setTerminalRawMode(true);
     
-    open_camera(fd, WIDTH, HEIGHT);
+    // 2. 启动线程
+    std::thread key_thread(keyboard_listener);
+    key_thread.detach(); // 分离线程，让它自己在后台跑
 
-    int n_buffers = 4;
-    CameraBuffer* buffers = map_buffers(fd, &n_buffers);
-    start_capturing(fd, n_buffers);
+    // 4. 运行主业务 (阻塞)
+    app.runMainLoop();
 
-    // 2. 初始化 RGA
-    init_rga();
+    setTerminalRawMode(false);
 
-    // 3. 初始化 MPP
-    MppEncoder* encoder = new MppEncoder();
-    if (encoder->init(WIDTH, HEIGHT, FPS) < 0) return -1;
-    start_time = get_time_ms();
-    // 4. 启动 SRT 发送线程
-    srt_startup();
-    std::thread net_thread(network_thread_func, SERVER_IP, SERVER_PORT, STREAM_KEY);
-    //net_thread.detach(); 
-    cout << ">>[SRT] 推流启动: " << SERVER_IP << " -> " << STREAM_KEY << endl;
-    // 5. 启动音频采集线程
-    std::thread audio_thread(audio_thread_func);
-    //audio_thread.detach();
+    // 5. 停止与清理
+    app.stop();
 
-    long long last_log_time = get_time_ms();
-    int frame_count = 0;
-    int total_bytes = 0;
-    // 6. 主循环
-    while (is_running) {
-        int index = wait_and_get_frame(fd);
-        if (index < 0) continue;
-        //printf(">> [推流中] index: %d\n", index);
-        // A. RGA: V4L2(FD) -> MPP(FD)
-        int rga_ret = convert_yuyv_to_nv12(buffers[index].export_fd, encoder->get_input_fd(), WIDTH, HEIGHT);
-
-        return_frame(fd, index);
-
-        if (rga_ret == 0) {
-            
-            // B. MPP: 编码
-            //printf(">> [推流中] 执行编码...\n");
-            void* enc_data = nullptr;
-            size_t enc_len = 0;
-            bool is_key = false; 
-
-            if (encoder->encode_to_memory(&enc_data, &enc_len, &is_key) == 0) {
-               // printf(">> [推流中] 编码得到 %zu 字节数据\n", enc_len);
-               if (is_key) printf(">>[推流中] 这是一个关键帧 (IDR)\n");
-                // C. 推入队列 (非阻塞，极快)
-                // 这里发生了内存拷贝 (enc_data -> queue)，但对于 H264 来说数据量很小(几十KB)，不影响性能
-                packet_queue.push(enc_data, enc_len, get_time_ms() - start_time, is_key, MEDIA_VIDEO);
-
-                frame_count++;
-                total_bytes += enc_len;
-            }
-        }
-        // 每隔一秒打印一次状态
-        long long now = get_time_ms();
-        if (now - last_log_time >= 1000) {
-            // 计算码率 (Kbps)
-            float bitrate_kbps = (total_bytes * 8.0) / 1000.0;
-
-            printf(">>[推流中] FPS: %d | 码率: %.2f Kbps\n", 
-                   frame_count, bitrate_kbps);
-
-            // 重置计数器
-            last_log_time = now;
-            frame_count = 0;
-            total_bytes = 0;
-        }
-    }
-
-    // 清理
-    packet_queue.stop();
-
-    if (net_thread.joinable()) {
-        net_thread.join();
-        cout << ">>[系统] 网络线程已退出" << endl;
-    }
-    
-    if (audio_thread.joinable()) {
-        audio_thread.join();
-        cout << ">>[系统] 音频线程已退出" << endl;
-    }
-    packet_queue.clear();
-    delete encoder;
-    stop_capturing(fd);
-    release_buffers(buffers, n_buffers);
-    close(fd);
-    srt_cleanup();
-    cout << ">>[系统] 程序已退出" << endl;
-
+    // 6. 强制退出 
+    printf(">>[System] Byte!\n");
+    fflush(stdout);
     _exit(0);
 }
 

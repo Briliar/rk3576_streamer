@@ -10,7 +10,7 @@ int init_rga() {
     // 这里的 c_RkRgaInit 可能会在不同版本的库里名字不一样
     // 大部分新版 librga 不需要显式 Init，直接调 im... 函数即可
     // 我们这里打印一下版本确认库链接上了
-    cout << ">> [RGA] RGA 模块已准备就绪" << endl;
+    cout << ">>[RGA] RGA 模块已准备就绪" << endl;
     return 0;
 }
 
@@ -18,16 +18,12 @@ int init_rga() {
 int convert_yuyv_to_nv12(int src_fd, int dst_fd, int width, int height) {
     // 1. SRC (V4L2) 
     rga_buffer_t src = wrapbuffer_fd(src_fd, width, height, RK_FORMAT_YUYV_422); 
-    src.wstride = width;
-    src.hstride = height;
+    
 
     // 2. DST (MPP FD)
     // 这里使用 wrapbuffer_fd，必须传入 fd
     rga_buffer_t dst = wrapbuffer_fd(dst_fd, width, height, RK_FORMAT_YCbCr_420_SP);
     
-    // 这里也要对齐，虽然 720P 不需要，但保持习惯
-    // dst.wstride = (width + 15) & (~15);
-    // dst.hstride = (height + 15) & (~15);
 
     return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1;
 }
@@ -36,7 +32,7 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     cout << " 开始 RGA 转码测试: YUYV -> NV12 (使用 MPP 内存)" << endl;
 
     // 1. 打开设备 (修正了之前的调用方式)
-    open_camera(fd, w, h);
+    open_camera(fd, w, h, 30);
     if (fd < 0) return;
 
     int n_buffers = 4;
@@ -102,4 +98,20 @@ void run_convert_test(int fd, int w, int h, int count, const char* filename) {
     close(fd);
     
     cout << "RGA 测试结束！请查看 " << filename << endl;
+}
+
+int rga_convert(void* src_ptr, int src_fd, int src_w, int src_h, int src_fmt,
+                void* dst_ptr, int dst_fd, int dst_w, int dst_h, int dst_fmt) {
+
+    rga_buffer_t src, dst;
+    
+    // 封装源 buffer
+    if (src_fd > 0) src = wrapbuffer_fd(src_fd, src_w, src_h, src_fmt);
+    else            src = wrapbuffer_virtualaddr(src_ptr, src_w, src_h, src_fmt);
+
+    // 封装目的 buffer
+    if (dst_fd > 0) dst = wrapbuffer_fd(dst_fd, dst_w, dst_h, dst_fmt);
+    else            dst = wrapbuffer_virtualaddr(dst_ptr, dst_w, dst_h, dst_fmt);
+
+    return (imcvtcolor(src, dst, src.format, dst.format) == IM_STATUS_SUCCESS) ? 0 : -1; // 执行拷贝/缩放/格式转换
 }
