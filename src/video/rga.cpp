@@ -10,7 +10,7 @@ int init_rga() {
     // 这里的 c_RkRgaInit 可能会在不同版本的库里名字不一样
     // 大部分新版 librga 不需要显式 Init，直接调 im... 函数即可
     // 我们这里打印一下版本确认库链接上了
-    cout << ">> [RGA] RGA 模块已准备就绪" << endl;
+    cout << ">>[RGA] RGA 模块已准备就绪" << endl;
     return 0;
 }
 

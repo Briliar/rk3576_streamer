@@ -96,10 +96,6 @@ void StreamerApp::start(const std::string& server_ip, int server_port, const std
     // 启动音频采集线程
     m_audio_thread = new std::thread(&StreamerApp::audioWorker, this);
 
-    cout << ">>[App] 启动主视频循环..." << endl;
-    // 启动主视频循环 (阻塞调用)
-    runMainLoop();
-
 }
 
 //停止
@@ -171,6 +167,8 @@ void StreamerApp::releaseResources() {
 
 // 主视频循环
 void StreamerApp::runMainLoop() {
+    cout << ">>[App] 启动主视频循环..." << endl;
+
     long long last_log_time = get_time_ms();
     long long start_pts_base = get_time_ms();
     int frame_count = 0;
@@ -256,7 +254,7 @@ void StreamerApp::runMainLoop() {
         long long now = get_time_ms();
         if (now - last_log_time >= 1000) {
             float bitrate = (total_bytes * 8.0) / 1000.0;
-            printf(">>[推流中] %s | FPS: %d | Bitrate: %.2f Kbps\n", 
+            printf(">>[推流中] %s | FPS: %d | 码率: %.2f Kbps\n", 
                    m_ai_enabled ? "AI ON " : "AI OFF", 
                    frame_count, bitrate);
             

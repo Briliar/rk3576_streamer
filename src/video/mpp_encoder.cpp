@@ -70,7 +70,7 @@ int MppEncoder::init(int w, int h, int fps) {
     ret = mpp_buffer_get(NULL, &shared_input_buf, frame_size);
     if (ret != MPP_OK) { cerr << "mpp buffer alloc failed" << endl; return -1; }
 
-    cout << ">> [MPP] 初始化成功！ FD=" << mpp_buffer_get_fd(shared_input_buf) 
+    cout << ">>[MPP] 初始化成功！ FD=" << mpp_buffer_get_fd(shared_input_buf) 
          << " Size=" << frame_size << endl;
 
     return 0;
