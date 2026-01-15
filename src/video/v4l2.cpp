@@ -119,11 +119,11 @@ int open_camera(int fd, int width, int height) {
     }
 
     // 打印实际协商结果
-    cout << ">> [V4L2] 设置分辨率: " << fmt.fmt.pix.width << "x" << fmt.fmt.pix.height << endl;
+    cout << ">>[V4L2] 设置分辨率: " << fmt.fmt.pix.width << "x" << fmt.fmt.pix.height << endl;
     
     char fourcc[5] = {0};
     *(int*)fourcc = fmt.fmt.pix.pixelformat;
-    cout << ">> [V4L2] 像素格式: " << fourcc << endl;
+    cout << ">>[V4L2] 像素格式: " << fourcc << endl;
 
    
 
@@ -135,8 +135,8 @@ int open_camera(int fd, int width, int height) {
     streamparm.parm.capture.timeperframe.denominator = 30;
 
     if (ioctl(fd, VIDIOC_S_PARM, &streamparm) == 0) {
-        cout << ">> [V4L2] 帧率设置成功" << endl;
-        printf(">> [V4L2] 最终驱动帧率: %u/%u fps\n", 
+        cout << ">>[V4L2] 帧率设置成功" << endl;
+        printf(">>[V4L2] 最终驱动帧率: %u/%u fps\n", 
            streamparm.parm.capture.timeperframe.denominator,
            streamparm.parm.capture.timeperframe.numerator);
     }
@@ -162,7 +162,7 @@ CameraBuffer* map_buffers(int fd, int* count) {
         return nullptr;
     }
     *count = req.count;
-    std::cout << ">> [V4L2] 成功申请缓冲区数量: " << req.count << std::endl;
+    std::cout << ">>[V4L2] 成功申请缓冲区数量: " << req.count << std::endl;
 
     // 2. 分配用户空间的管理数组
     // 我们用 new 动态分配一个数组，记得最后要 delete[]
@@ -216,7 +216,7 @@ CameraBuffer* map_buffers(int fd, int* count) {
         }
     }
     
-    std::cout << ">> [V4L2] 缓冲区映射 & DMA导出 完成" << std::endl;
+    std::cout << ">>[V4L2] 缓冲区映射 & DMA导出 完成" << std::endl;
     return buffers;
 }
 
@@ -233,7 +233,7 @@ void release_buffers(CameraBuffer* buffers, int count) {
         }
     }
     delete[] buffers;
-    std::cout << ">> [V4L2] 缓冲区资源已释放" << std::endl;
+    std::cout << ">>[V4L2] 缓冲区资源已释放" << std::endl;
 }
 
 int start_capturing(int fd, int buffer_count) {
@@ -250,7 +250,7 @@ int start_capturing(int fd, int buffer_count) {
             return -1;
         }
     }
-    std::cout << ">> [V4L2] 所有缓冲区已入队 (QBUF Done)" << std::endl;
+    std::cout << ">>[V4L2] 所有缓冲区已入队 (QBUF Done)" << std::endl;
 
     // 2. 开启视频流 (STREAMON)
     enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -258,14 +258,14 @@ int start_capturing(int fd, int buffer_count) {
         perror("STREAMON (开启流) 失败");
         return -1;
     }
-    std::cout << ">> [V4L2] 视频流已开启 (STREAMON)" << std::endl;
+    std::cout << ">>[V4L2] 视频流已开启 (STREAMON)" << std::endl;
     return 0;
 }
 
 void stop_capturing(int fd) {
     enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     ioctl(fd, VIDIOC_STREAMOFF, &type);
-    std::cout << ">> [V4L2] 视频流已停止" << std::endl;
+    std::cout << ">>[V4L2] 视频流已停止" << std::endl;
 }
 
 int wait_and_get_frame(int fd) {
@@ -280,10 +280,10 @@ int wait_and_get_frame(int fd) {
 
     int r = select(fd + 1, &fds, NULL, NULL, &tv);
     if (r == -1) {
-        perror("select 错误");
+        perror(">>[V4L2] select 错误");
         return -1;
     } else if (r == 0) {
-        std::cerr << "等待帧超时 (Timeout)" << std::endl;
+        std::cerr << ">>[V4L2] 等待帧超时 (Timeout)" << std::endl;
         return -1;
     }
 

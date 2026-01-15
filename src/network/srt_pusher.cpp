@@ -5,12 +5,12 @@
 using namespace std;
 
 SrtPusher::SrtPusher() {
-    srt_startup();
+    //srt_startup();
 }
 
 SrtPusher::~SrtPusher() {
     close();
-    srt_cleanup();
+    //srt_cleanup();
 }
 
 int SrtPusher::connect(const std::string& ip, int port, const std::string& stream_id) {
