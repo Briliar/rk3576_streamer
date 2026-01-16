@@ -33,7 +33,7 @@
     - [x] 命令行参数解析
     - [x] 线程资源管理
 
-## 🛠️ 编译与运行
+##  编译与运行
 
 ### 1. 依赖环境
 * Rockchip BSP SDK (librga, mpp, rknn-api)
