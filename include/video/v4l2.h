@@ -26,5 +26,4 @@ int wait_and_get_frame(int fd);
 // 参数：index 是你刚才取出的那个 buffer 的编号
 int return_frame(int fd, int index);
 // 新增：释放资源
-void run_capture_test(int fd, int w, int h, int count, const char* filename);
 void release_buffers(CameraBuffer* buffers, int count);

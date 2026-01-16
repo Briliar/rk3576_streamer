@@ -33,5 +33,3 @@ private:
     int channels_;
     snd_pcm_uframes_t frames_;    // 每次读取多少帧 (AAC编码通常需要1024)
 };
-
-void run_audio_test();

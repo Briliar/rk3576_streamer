@@ -51,5 +51,3 @@ private:
     // RGA 往这里写，MPP 从这里读
     MppBuffer shared_input_buf = nullptr;
 };
-
-void run_encoder_test(int fd, int w, int h, int frame_count,const char* filename);

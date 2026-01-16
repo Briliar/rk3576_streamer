@@ -88,39 +88,3 @@ size_t AudioCapture::get_buffer_size() const {
     return frames_ * channels_ * 2; 
 }
 
-void run_audio_test() {
-    AudioCapture audio;
-    
-    // 初始化
-    if (audio.init() < 0) return;
-
-    // 分配内存
-    size_t buf_size = audio.get_buffer_size();
-    std::vector<char> buffer(buf_size);
-
-    std::cout << ">>[ALSA] 开始录音测试... (请对着麦克风说话)" << std::endl;
-
-    while (true) {
-        int frames = audio.read_frame(buffer.data());
-        
-        if (frames > 0) {
-            // --- 简单的音量计算 (可视化测试) ---
-            // 把 char* 强转为 short* (16bit)
-            short* samples = (short*)buffer.data();
-            long long sum = 0;
-            // 计算这一帧所有采样点的绝对值之和
-            for (int i = 0; i < frames * 2; i++) { // *2 是因为双声道
-                sum += std::abs(samples[i]);
-            }
-            double avg_vol = sum / (frames * 2.0);
-
-            // 如果有声音，打印个条条
-            if (avg_vol > 500) { 
-                std::cout << ">>[ALSA] 音量: " << avg_vol << " |";
-                int bars = (int)(avg_vol / 200);
-                for(int k=0; k<bars && k<50; k++) std::cout << "#";
-                std::cout << std::endl;
-            }
-        }
-    }
-}

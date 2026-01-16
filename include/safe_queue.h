@@ -24,42 +24,46 @@ struct MediaPacket {
 class MediaPacketQueue {
 public:
     // max_size: 队列最大长度，超过就开始丢帧
-    MediaPacketQueue(size_t max_size = 60) : max_size_(max_size) {}
+    MediaPacketQueue(int max_size, std::string name = "Queue") 
+        : max_size_(max_size), queue_name_(name) {}
 
     ~MediaPacketQueue() {
-        while (!queue_.empty()) {
-            MediaPacket p = queue_.front();
-            if (p.data) free(p.data);
-            queue_.pop();
-        }
+        clear();
     }
 
     // 【生产者调用】推入数据
-    void push(const void* data, size_t size, uint32_t timestamp, bool keyframe, MediaType type= MEDIA_VIDEO) {
+    void push(const void* data, size_t size, uint32_t timestamp, bool keyframe, MediaType type = MEDIA_VIDEO) {
         std::lock_guard<std::mutex> lock(mtx_);
 
-        // 策略：如果队列满了，丢弃最老的一帧 (Drop Head)
-        // 这样能保证发出去的永远是比较新的画面
+        // --- 丢帧策略 (Drop Head) ---
         if (queue_.size() >= max_size_) {
             MediaPacket& old = queue_.front();
-            if (old.data) free(old.data); // 释放内存
+            if (old.data) free(old.data);
             queue_.pop();
-            std::cout << ">>[SRT] 网络拥堵，丢弃一帧: " << (old.type == MEDIA_VIDEO ? "视频" : "音频") << std::endl;
+            
+            //  智能日志：每隔 1000ms 最多打印一次，防止刷屏
+            long long now = get_current_ms();
+            if (now - last_log_time_ > 1000) {
+                // 如果是推流队列，这是警告；如果是录像队列，这是严重错误
+                std::cout << ">>[Warn] " << queue_name_ << " 拥堵! 自动丢弃旧帧 (当前缓存: " 
+                          << max_size_ << ")" << std::endl;
+                last_log_time_ = now;
+            }
         }
 
+        // --- 正常入队 ---
         MediaPacket packet;
         packet.size = size;
         packet.timestamp = timestamp;
         packet.is_keyframe = keyframe;
         packet.type = type;
 
-        // 【注意】必须深拷贝！
-        // 因为 MPP 的 buffer 在下一轮循环就会被重写，不能只存指针
+        // 深拷贝数据
         packet.data = malloc(size);
         if (packet.data) {
             memcpy(packet.data, data, size);
             queue_.push(packet);
-            cv_.notify_one(); // 唤醒消费者
+            cv_.notify_one();
         }
     }
 
@@ -91,9 +95,18 @@ public:
         }
     }
 private:
+    // 辅助：获取毫秒时间戳
+    long long get_current_ms() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+private:
     std::queue<MediaPacket> queue_;
     std::mutex mtx_;
     std::condition_variable cv_;
     size_t max_size_;
     bool stop_flag_ = false;
+
+    std::string queue_name_;    // 队列名字
+    long long last_log_time_ = 0; // 上次打印警告的时间
 };
