@@ -27,16 +27,27 @@ bool StreamerApp::init(const AppConfig& config) {
     m_config = config;
 
     cout << ">>[App] 正在初始化..." << endl;
-    printf(">>[App] 参数: %dx%d @ %dFPS | Dev: %s\n", 
-           m_config.width, m_config.height, m_config.fps, m_config.dev_name.c_str());
+    // printf(">>[App] 参数: %dx%d @ %dFPS | Dev: %s\n", 
+    //        m_config.width, m_config.height, m_config.fps, m_config.dev_name.c_str());
 
     // 1. 打开摄像头
-    m_camera_fd = open(m_config.dev_name.c_str(), O_RDWR | O_NONBLOCK, 0);
+    m_camera_fd = query_device_info(m_config.dev_name.c_str());
     if (m_camera_fd < 0) {
         cerr << ">>[V4L2] 无法打开摄像头设备: " << m_config.dev_name << endl;
         return false;
     }
     open_camera(m_camera_fd, m_config.width, m_config.height, m_config.fps);
+    cout << ">>[V4L2] 摄像头打开成功: " << m_config.dev_name << endl;
+
+    if (get_v4l2_buf_type() == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+        // MIPI 摄像头 -> NV12
+        m_src_format = RK_FORMAT_YCbCr_420_SP;
+        printf(">>[V4L2] 源模式: MIPI (NV12)\n");
+    } else {
+        // USB 摄像头 -> YUYV
+        m_src_format = RK_FORMAT_YUYV_422;
+        printf(">>[V4L2] 源模式: USB (YUYV)\n");
+    }
 
     // 2. 映射缓冲区
     m_camera_buffers = map_buffers(m_camera_fd, &m_n_buffers);
@@ -225,14 +236,14 @@ void StreamerApp::runMainLoop() {
             // --- AI 开启模式 ---
             
             // A. 转 640x640 RGB 给 AI
-            rga_convert(nullptr, src_fd, m_config.width, m_config.height, RK_FORMAT_YUYV_422,
+            rga_convert(nullptr, src_fd, m_config.width, m_config.height, m_src_format,
                        m_ai_buf, -1, 640, 640, RK_FORMAT_RGB_888);
 
             // B. 推理
             std::vector<Object> objects = m_detector->detect(m_ai_buf);
 
             // C. 转 720P RGB 准备画图
-            rga_convert(nullptr, src_fd, m_config.width, m_config.height, RK_FORMAT_YUYV_422,
+            rga_convert(nullptr, src_fd, m_config.width, m_config.height,  m_src_format,
                        m_draw_buf, -1, m_config.width, m_config.height, RK_FORMAT_RGB_888);
 
             // D. OpenCV 画框
@@ -266,7 +277,7 @@ void StreamerApp::runMainLoop() {
         } else {
             // --- AI 关闭模式 (直通) ---
             // 直接 YUYV -> NV12 (FD to FD, 零拷贝)
-            rga_convert(nullptr, src_fd, m_config.width, m_config.height, RK_FORMAT_YUYV_422,
+            rga_convert(nullptr, src_fd, m_config.width, m_config.height, m_src_format,
                        nullptr, dst_fd, m_config.width, m_config.height, RK_FORMAT_YCbCr_420_SP);
         }
 
@@ -431,9 +442,9 @@ void StreamerApp::recordWorker() {
             long long now = get_time_ms();
 
             // =========================================================
-            //  逻辑 1: 判断是否需要关闭旧文件 (切片)
+            //  逻辑 1: 判断是否需要关闭旧文件 
             // =========================================================
-            // 条件：文件已打开 && 时间超过设定值(默认5分钟) && 当前是关键帧
+            // 条件：文件已打开 && 时间超过设定值 && 当前是关键帧
             bool is_time_up = (now - last_segment_time > m_config.segment_ms);
             
             if (file_out.is_open() && is_time_up && pkt.is_keyframe) {
@@ -444,7 +455,7 @@ void StreamerApp::recordWorker() {
             // =========================================================
             //  逻辑 2: 判断是否需要创建新文件
             // =========================================================
-            // 条件：文件未打开 (或刚被关闭) && 当前是关键帧
+            // 条件：文件未打开 && 当前是关键帧
             // 必须由关键帧开始，否则播放器会花屏或报错
             if (!file_out.is_open()) {
                 if (pkt.is_keyframe) {

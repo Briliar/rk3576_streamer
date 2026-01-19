@@ -1,7 +1,35 @@
 #pragma once
 #include <string>
 
-// 请复制此文件为 config.h 并填入你的真实信息
-const std::string SERVER_IP = "127.0.0.1";
-const int SERVER_PORT = 8890;
-const std::string STREAM_KEY = "publish:live/test";
+// 默认配置参数
+constexpr auto DEFAULT_DEV_NAME    = "/dev/video11";
+constexpr int  DEFAULT_WIDTH       = 1280;
+constexpr int  DEFAULT_HEIGHT      = 720;
+constexpr int  DEFAULT_FPS         = 30;
+constexpr auto DEFAULT_MODEL_PATH  = "model/yolov8.rknn";
+constexpr auto DEFAULT_IP          = "1.2.3.4";
+constexpr int  DEFAULT_PORT        = 8890;
+constexpr auto DEFAULT_STREAM_ID   = "publish:live/test";
+constexpr auto DEFAULT_RECORD_DIR  = "/mnt/sd/records";
+constexpr int  DEFAULT_SEGMENT_MS  = 1*60*1000; 
+
+//运行时配置结构体
+struct AppConfig {
+    // 1. 硬件参数 (利用默认值初始化)
+    std::string dev_name = DEFAULT_DEV_NAME;
+    int width            = DEFAULT_WIDTH;
+    int height           = DEFAULT_HEIGHT;
+    int fps              = DEFAULT_FPS;
+
+    // 2. 业务参数
+    std::string model_path = DEFAULT_MODEL_PATH;
+    std::string ip         = DEFAULT_IP;
+    int port               = DEFAULT_PORT;
+    std::string stream_id  = DEFAULT_STREAM_ID;
+    std::string record_dir = DEFAULT_RECORD_DIR;
+    int segment_ms         = DEFAULT_SEGMENT_MS; 
+    // 3. 功能开关
+    bool enable_stream = false;
+    bool enable_record = false;
+    bool enable_ai     = false;
+};

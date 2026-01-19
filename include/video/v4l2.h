@@ -8,8 +8,11 @@ struct CameraBuffer {
     int export_fd;  // 【关键】DMA-BUF 文件描述符 (给 RGA/MPP 用的)
     int index;      // 在 V4L2 队列中的编号 (0, 1, 2, 3)
 };
+static int g_buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
 
 int query_device_info(const char* dev_name);
+
 int open_camera(int fd, int width, int height,int fps);
 // 新增：申请并映射缓冲区
 // 参数：fd (摄像头描述符), count (想要申请几个，通常传指针以便返回实际申请数)
@@ -27,3 +30,5 @@ int wait_and_get_frame(int fd);
 int return_frame(int fd, int index);
 // 新增：释放资源
 void release_buffers(CameraBuffer* buffers, int count);
+
+int get_v4l2_buf_type();

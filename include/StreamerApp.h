@@ -69,6 +69,9 @@ private:
     YoloDetector* m_detector = nullptr;
 
     // --- 4. 摄像头相关 ---
+    int           m_src_width;
+    int           m_src_height;
+    int           m_src_format; // RK_FORMAT_YUYV_422 或 RK_FORMAT_YCbCr_420_SP
     int           m_camera_fd = -1;
     CameraBuffer* m_camera_buffers = nullptr; // V4L2 映射出的内存数组
     int           m_n_buffers = 4;            // 缓冲区数量

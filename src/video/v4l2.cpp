@@ -28,8 +28,7 @@ int query_device_info(const char* dev_name) {
     struct v4l2_capability cap;
     memset(&cap, 0, sizeof(cap));
     
-    // ioctl 是“Input/Output Control”的缩写，是控制设备的万能函数
-    // VIDIOC_QUERYCAP = Video Input/Output Control Query Capability
+
     if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
         perror("查询设备能力失败");
         close(fd);
@@ -43,12 +42,16 @@ int query_device_info(const char* dev_name) {
     cout << "版本号 (Version):  " << ((cap.version >> 16) & 0xFF) << "." 
                                   << ((cap.version >> 8) & 0xFF) << endl;
 
-    // 检查是否是视频采集设备
-    if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) {
-        cout << ">> 这是一个视频采集设备" << endl;
-    }
-    if (cap.capabilities & V4L2_CAP_STREAMING) {
-        cout << ">> 支持流媒体 (Streaming) I/O" << endl;
+    if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
+        g_buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+        cout << ">>[V4L2] 设备类型: MIPI/ISP" << endl;
+    } else if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) {
+        g_buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        cout << ">>[V4L2] 设备类型: USB/UVC" << endl;
+    } else {
+        cout << ">>[V4L2] 不是视频采集设备" << endl;
+        close(fd);
+        return -1;
     }
 
     // 3. 枚举支持的像素格式
@@ -57,7 +60,7 @@ int query_device_info(const char* dev_name) {
 
     struct v4l2_fmtdesc fmt;
     memset(&fmt, 0, sizeof(fmt));
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // 指定我们查询的是视频捕获类型
+    fmt.type = g_buf_type; // 指定我们查询的是视频捕获类型
 
     // 循环查询，index 从 0 开始递增，直到失败
     for (int i = 0; ; ++i) {
@@ -86,11 +89,18 @@ int query_device_info(const char* dev_name) {
 
         while (ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &frmsize) == 0) {
             if (frmsize.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
-                // 离散分辨率 (如 1920x1080, 1280x720)
+                // 离散分辨率 
                 cout << "    - 分辨率: " << frmsize.discrete.width 
                      << "x" << frmsize.discrete.height << endl;
-            } else {
-                cout << "    - 分辨率: 连续可变范围 (Stepwise)" << endl;
+            } else if (frmsize.type == V4L2_FRMSIZE_TYPE_STEPWISE || 
+                     frmsize.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
+                // 范围分辨率
+                cout << "    - [范围] " 
+                     << frmsize.stepwise.min_width << "x" << frmsize.stepwise.min_height
+                     << " -> "
+                     << frmsize.stepwise.max_width << "x" << frmsize.stepwise.max_height
+                     << " (对齐: " << frmsize.stepwise.step_width << "x" << frmsize.stepwise.step_height << ")" 
+                     << endl;
             }
             frmsize.index++;
         }
@@ -100,45 +110,75 @@ int query_device_info(const char* dev_name) {
 
 int open_camera(int fd, int width, int height,int fps) {
 
-    // 2. 设置格式 (VIDIOC_S_FMT)
-    struct v4l2_format fmt;
-    memset(&fmt, 0, sizeof(fmt));
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-    fmt.fmt.pix.width = width;
-    fmt.fmt.pix.height = height;
-    //fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12; // 优先尝试 NV12
-    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
-    fmt.fmt.pix.field = V4L2_FIELD_NONE;
-
-    if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0) {
-        perror("设置格式失败");
-        close(fd);
+    // 先查询一次 Capability，确定是 USB 还是 MIPI
+    struct v4l2_capability cap;
+    if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
+        perror("查询能力失败");
         return -1;
     }
 
-    // 打印实际协商结果
-    cout << ">>[V4L2] 设置分辨率: " << fmt.fmt.pix.width << "x" << fmt.fmt.pix.height << endl;
-    
-    char fourcc[5] = {0};
-    *(int*)fourcc = fmt.fmt.pix.pixelformat;
-    cout << ">>[V4L2] 像素格式: " << fourcc << endl;
+    if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
+        g_buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE; // MIPI 改用 MPLANE
+        std::cout << ">>[V4L2] 模式: Multi-Planar (MPLANE)" << std::endl;
+    } else {
+        g_buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        std::cout << ">>[V4L2] 模式: Single-Planar" << std::endl;
+    }
 
-   
+    // 2. 设置格式 (VIDIOC_S_FMT)
+    struct v4l2_format fmt;
+    memset(&fmt, 0, sizeof(fmt));
+    fmt.type = g_buf_type; 
 
-    // 3. 设置帧率 (30 FPS)
+    if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+        // --- MIPI (MPLANE) 设置方式 ---
+        fmt.fmt.pix_mp.width = width;
+        fmt.fmt.pix_mp.height = height;
+        fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12; // 推荐 NV12
+        fmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
+        // fmt.fmt.pix_mp.num_planes = 1; // 通常驱动会自动修正，不写也行
+    } else {
+        // --- USB (Single-Plane) 设置方式 ---
+        fmt.fmt.pix.width = width;
+        fmt.fmt.pix.height = height;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV; 
+        fmt.fmt.pix.field = V4L2_FIELD_NONE;
+    }
+
+    if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0) {
+        perror(">>[V4L2] 设置格式失败 (S_FMT)");
+        return -1;
+    }
+
+    // 打印实际结果 
+    if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+        cout << ">>[V4L2-MIPI] 设置分辨率: " << fmt.fmt.pix_mp.width << "x" << fmt.fmt.pix_mp.height << endl;
+        char fourcc[5] = {0};
+        *(int*)fourcc = fmt.fmt.pix_mp.pixelformat;
+        cout << ">>[V4L2-MIPI] 像素格式: " << fourcc << endl;
+    } else {
+        cout << ">>[V4L2-USB] 设置分辨率: " << fmt.fmt.pix.width << "x" << fmt.fmt.pix.height << endl;
+        char fourcc[5] = {0};
+        *(int*)fourcc = fmt.fmt.pix.pixelformat;
+        cout << ">>[V4L2-USB] 像素格式: " << fourcc << endl;
+    }
+
+    // 3. 设置帧率 
     struct v4l2_streamparm streamparm;
     memset(&streamparm, 0, sizeof(streamparm));
-    streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    streamparm.type = g_buf_type; 
+    
     streamparm.parm.capture.timeperframe.numerator = 1;
     streamparm.parm.capture.timeperframe.denominator = fps;
 
     if (ioctl(fd, VIDIOC_S_PARM, &streamparm) == 0) {
-        cout << ">>[V4L2] 帧率设置成功" << endl;
         printf(">>[V4L2] 最终驱动帧率: %u/%u fps\n", 
-           streamparm.parm.capture.timeperframe.denominator,
-           streamparm.parm.capture.timeperframe.numerator);
+            streamparm.parm.capture.timeperframe.denominator,
+            streamparm.parm.capture.timeperframe.numerator);
+    } else {
+        printf(">>[V4L2] 驱动不支持设置帧率\n");
     }
+    
     return 0;
 }
 
@@ -147,17 +187,17 @@ CameraBuffer* map_buffers(int fd, int* count) {
     struct v4l2_requestbuffers req;
     memset(&req, 0, sizeof(req));
     req.count = *count;                 // 期望申请的数量 (比如 4)
-    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.type = g_buf_type;
     req.memory = V4L2_MEMORY_MMAP;      // 使用内存映射模式
 
     if (ioctl(fd, VIDIOC_REQBUFS, &req) < 0) {
-        perror("REQBUFS 失败");
+        perror(">>[V4L2] REQBUFS 失败");
         return nullptr;
     }
 
     // 驱动可能申请不到 4 个，只给了 2 个，所以要更新 count
     if (req.count < 2) {
-        std::cerr << "缓冲区数量不足 (" << req.count << ")" << std::endl;
+        std::cerr << ">>[V4L2] 缓冲区数量不足 (" << req.count << ")" << std::endl;
         return nullptr;
     }
     *count = req.count;
@@ -172,41 +212,59 @@ CameraBuffer* map_buffers(int fd, int* count) {
     for (int i = 0; i < req.count; ++i) {
         struct v4l2_buffer buf;
         memset(&buf, 0, sizeof(buf));
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.type = g_buf_type;
         buf.memory = V4L2_MEMORY_MMAP;
         buf.index = i;
 
-        // A. 查询 (Query): 问内核第 i 个盘子在哪里、多大
-        if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) {
-            perror("QUERYBUF 失败");
-            return nullptr;
+       // MPLANE 特殊处理：length 和 offset 位置不同
+        if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+            // MPLANE 需要分配 planes 数组
+            struct v4l2_plane planes[1]; 
+            memset(planes, 0, sizeof(planes));
+            buf.m.planes = planes;
+            buf.length = 1; // plane 数量
+
+            if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) {
+                perror(">>[V4L2] QUERYBUF (MPLANE) 失败");
+                return nullptr;
+            }
+            
+            buffers[i].index = i;
+            buffers[i].length = buf.m.planes[0].length; // 长度在 plane 里
+            
+            buffers[i].start = mmap(NULL, buf.m.planes[0].length,
+                                    PROT_READ | PROT_WRITE, MAP_SHARED,
+                                    fd, buf.m.planes[0].m.mem_offset); // offset 在 plane 里
+        } 
+        else {
+            // 普通模式
+            if (ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) {
+                perror(">>[V4L2] QUERYBUF 失败");
+                return nullptr;
+            }
+            buffers[i].index = i;
+            buffers[i].length = buf.length;
+            buffers[i].start = mmap(NULL, buf.length,
+                                    PROT_READ | PROT_WRITE, MAP_SHARED,
+                                    fd, buf.m.offset);
         }
-
-        buffers[i].index = i;
-        buffers[i].length = buf.length;
-
-        // B. 映射 (Mmap): 将内核地址映射到用户空间指针
-        // PROT_READ | PROT_WRITE: 可读可写
-        // MAP_SHARED: 共享模式 (必须)
-        buffers[i].start = mmap(NULL, buf.length, 
-                                PROT_READ | PROT_WRITE, 
-                                MAP_SHARED, 
-                                fd, buf.m.offset);
-
         if (buffers[i].start == MAP_FAILED) {
-            perror("mmap 失败");
+            perror(">>[V4L2] mmap 失败");
             return nullptr;
         }
 
-        // C. 【关键步骤】导出 DMA-BUF (Export DMA)
-        // 这是实现零拷贝的核心！我们需要拿到一个 fd 传给 RGA/MPP。
+        // C. 导出 DMA-BUF (Export DMA)
         struct v4l2_exportbuffer expbuf;
         memset(&expbuf, 0, sizeof(expbuf));
-        expbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        expbuf.type = g_buf_type;
         expbuf.index = i;
-        
+
+        if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+            expbuf.plane = 0; 
+        }
+
         if (ioctl(fd, VIDIOC_EXPBUF, &expbuf) < 0) {
-            perror("EXPBUF (DMA-BUF导出) 失败");
+            perror(">>[V4L2] EXPBUF (DMA-BUF导出) 失败");
             // 如果不支持 EXPBUF，这里可以置为 -1，后续就要走 CPU 拷贝了
             buffers[i].export_fd = -1;
         } else {
@@ -236,25 +294,33 @@ void release_buffers(CameraBuffer* buffers, int count) {
 }
 
 int start_capturing(int fd, int buffer_count) {
-    // 1. 把所有空盘子 (Buffer) 依次投放入队 (QBUF)
     for (int i = 0; i < buffer_count; ++i) {
         struct v4l2_buffer buf;
         memset(&buf, 0, sizeof(buf));
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.type = g_buf_type;
         buf.memory = V4L2_MEMORY_MMAP;
-        buf.index = i; // 告诉驱动：我把第 i 号盘子还给你
+        buf.index = i;
+
+        if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+            struct v4l2_plane planes[1];
+            memset(planes, 0, sizeof(planes));
+            buf.m.planes = planes;
+            buf.length = 1;
+            planes[0].bytesused = 0;
+            planes[0].length = 0;
+        }
 
         if (ioctl(fd, VIDIOC_QBUF, &buf) < 0) {
-            perror("QBUF (入队) 失败");
+            perror(">>[V4L2] QBUF (入队) 失败");
             return -1;
         }
     }
     std::cout << ">>[V4L2] 所有缓冲区已入队 (QBUF Done)" << std::endl;
 
     // 2. 开启视频流 (STREAMON)
-    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    enum v4l2_buf_type type = (v4l2_buf_type)g_buf_type;
     if (ioctl(fd, VIDIOC_STREAMON, &type) < 0) {
-        perror("STREAMON (开启流) 失败");
+        perror(">>[V4L2] STREAMON (开启流) 失败");
         return -1;
     }
     std::cout << ">>[V4L2] 视频流已开启 (STREAMON)" << std::endl;
@@ -262,7 +328,7 @@ int start_capturing(int fd, int buffer_count) {
 }
 
 void stop_capturing(int fd) {
-    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    enum v4l2_buf_type type = (v4l2_buf_type)g_buf_type;
     ioctl(fd, VIDIOC_STREAMOFF, &type);
     std::cout << ">>[V4L2] 视频流已停止" << std::endl;
 }
@@ -289,11 +355,21 @@ int wait_and_get_frame(int fd) {
     // B. 数据来了！执行出队操作 (DQBUF)
     struct v4l2_buffer buf;
     memset(&buf, 0, sizeof(buf));
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    
+    struct v4l2_plane planes[1];
+    memset(planes, 0, sizeof(planes));
+
+    buf.type = g_buf_type;
     buf.memory = V4L2_MEMORY_MMAP;
 
+    // MPLANE 需要挂载 planes 接收信息
+    if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+        buf.m.planes = planes;
+        buf.length = 1;
+    }
+
     if (ioctl(fd, VIDIOC_DQBUF, &buf) < 0) {
-        perror("DQBUF (取帧) 失败");
+        perror(">>[V4L2] DQBUF (取帧) 失败");
         return -1;
     }
 
@@ -304,14 +380,24 @@ int wait_and_get_frame(int fd) {
 int return_frame(int fd, int index) {
     struct v4l2_buffer buf;
     memset(&buf, 0, sizeof(buf));
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.type = g_buf_type;
     buf.memory = V4L2_MEMORY_MMAP;
-    buf.index = index; // 指定归还哪一个
+    buf.index = index;
+
+    if (g_buf_type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+        struct v4l2_plane planes[1];
+        memset(planes, 0, sizeof(planes));
+        buf.m.planes = planes;
+        buf.length = 1;
+    }
 
     if (ioctl(fd, VIDIOC_QBUF, &buf) < 0) {
-        perror("QBUF (归还) 失败");
+        perror(">>[V4L2] QBUF (归还) 失败");
         return -1;
     }
     return 0;
 }
 
+int get_v4l2_buf_type() {
+    return g_buf_type;
+}
