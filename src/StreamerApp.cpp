@@ -10,6 +10,14 @@ static uint32_t get_time_ms() {
     return (uint32_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
 
+// 获取当前时间字符串 "2026-01-21 16:20:00"
+static std::string get_current_time_string() {
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+
 StreamerApp::StreamerApp() :
             m_queue(60, "StreamQueue"),       // 推流队列：叫 "StreamQueue"
             m_record_queue(60, "RecordQueue") // 录像队列：叫 "RecordQueue" 
@@ -27,8 +35,6 @@ bool StreamerApp::init(const AppConfig& config) {
     m_config = config;
 
     cout << ">>[App] 正在初始化..." << endl;
-    // printf(">>[App] 参数: %dx%d @ %dFPS | Dev: %s\n", 
-    //        m_config.width, m_config.height, m_config.fps, m_config.dev_name.c_str());
 
     // 1. 打开摄像头
     m_camera_fd = query_device_info(m_config.dev_name.c_str());
@@ -148,7 +154,7 @@ void StreamerApp::stop() {
     m_queue.clear();
 
     // ============================================================
-    // 2. 清理本地录像线程 (新增)
+    // 2. 清理本地录像线程 
     // ============================================================
     if (m_record_thread) {
         // A. 唤醒队列
@@ -230,7 +236,8 @@ void StreamerApp::runMainLoop() {
 
         int src_fd = m_camera_buffers[index].export_fd; // V4L2 (YUYV)
         int dst_fd = m_encoder->get_input_fd();         // MPP (NV12)
-
+        // 获取当前时间字符串
+        std::string time_str = get_current_time_string();
         // 2. 根据开关处理逻辑
         if (m_config.enable_ai) {
             // --- AI 开启模式 ---
@@ -275,12 +282,34 @@ void StreamerApp::runMainLoop() {
                        nullptr, dst_fd, m_config.width, m_config.height, RK_FORMAT_YCbCr_420_SP);
 
         } else {
-            // --- AI 关闭模式 (直通) ---
-            // 直接 YUYV -> NV12 (FD to FD, 零拷贝)
+  
             rga_convert(nullptr, src_fd, m_config.width, m_config.height, m_src_format,
-                       nullptr, dst_fd, m_config.width, m_config.height, RK_FORMAT_YCbCr_420_SP);
+                       nullptr, dst_fd,m_config.width, m_config.height, RK_FORMAT_YCbCr_420_SP);
+ 
         }
 
+        void* dst_ptr = mmap(NULL, m_config.width * m_config.height * 1.5, 
+                                 PROT_READ | PROT_WRITE, MAP_SHARED, dst_fd, 0);
+
+        if (dst_ptr != MAP_FAILED) {
+                // 3. 把 NV12 的 Y 平面当做灰度图
+                // NV12 的前 w*h 个字节就是亮度信息，可以当 CV_8UC1 处理
+                cv::Mat y_plane(m_config.height, m_config.width, CV_8UC1, dst_ptr);
+
+                // 画灰度水印
+                // Scalar(0) 是黑色，Scalar(255) 是白色
+                cv::rectangle(y_plane, cv::Rect(0, 0, 575, 30), 
+                              cv::Scalar(0), cv::FILLED); // 黑色背景
+                //cv::putText(y_plane, time_str, cv::Point(0, 25), 
+                //            cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(0), 4);   // 黑边
+                cv::putText(y_plane, "NJUPT", cv::Point(0, 25), 
+                            cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255), 3); // 白字
+                cv::putText(y_plane, time_str, cv::Point(125, 25), 
+                            cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255), 3); // 白字
+
+                // 4. 解除映射 (部分 CPU 需要这一步来同步 Cache)
+                munmap(dst_ptr, m_config.width * m_config.height * 1.5);
+        }
         // 3. 归还 V4L2 帧
         return_frame(m_camera_fd, index);
 
