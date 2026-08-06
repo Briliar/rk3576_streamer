@@ -20,6 +20,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
 pkg_check_modules(AVFORMAT REQUIRED libavformat)
 pkg_check_modules(AVUTIL REQUIRED libavutil)
+pkg_check_modules(SRT REQUIRED srt)
 find_package(ALSA REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -28,9 +29,13 @@ include_directories(
     ${AVCODEC_INCLUDE_DIRS}
     ${AVFORMAT_INCLUDE_DIRS}
     ${AVUTIL_INCLUDE_DIRS}
+    ${SRT_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
     include
 )
+
+link_directories(${SRT_LIBRARY_DIRS})
+
 # 4. 查找源文件
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
@@ -45,7 +50,7 @@ target_link_libraries(rk3576_streamer
     rockchip_mpp    # 硬件编解码
     drm            # Zero-Copy 内存管理
     rga            # RGA 硬件加速
-    srt           # SRT 协议支持
+    ${SRT_LIBRARIES}    # SRT 协议支持
     pthread         # 多线程
     dl              # 动态加载
     ALSA::ALSA          # ALSA 音频支持

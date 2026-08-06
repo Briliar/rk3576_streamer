@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "video/rga.h"
 #include "video/v4l2.h"
 #include "video/mpp_encoder.h"
