@@ -46,6 +46,29 @@ ssh-keygen -t ed25519 -f ~/.ssh/rk3576_github_actions -C "github-actions"
 
 然后让 Nginx 的 `root` 指向这个目录即可。
 
+## 如果访问还是 404
+
+优先检查 ECS 上是否还有其他 `listen 80` 且 `server_name _` 的站点配置。
+
+```bash
+sudo nginx -T | grep -n "server_name _\|default_server\|listen 80"
+```
+
+如果 ECS 上自带了 `/etc/nginx/sites-enabled/default`，建议直接禁用它：
+
+```bash
+sudo unlink /etc/nginx/sites-enabled/default
+```
+
+然后再执行：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+如果你不想删默认站点，那就不要让本配置使用 `default_server`，并且要把 `server_name` 改成 ECS 公网 IP 或域名。
+
 ## 本地预览
 
 前端开发时，直接打开 `index.html` 也可以，但更推荐用本地静态服务器预览，避免后面接接口时出现路径问题。

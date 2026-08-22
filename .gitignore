@@ -3,6 +3,7 @@ build/
 bin/
 out/
 
+frontend/nginx/
 # 忽略 C++ 编译产生的中间文件
 *.o
 *.obj

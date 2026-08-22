@@ -32,4 +32,4 @@ jobs:
           rsync -avz --delete \
             -e "ssh -p ${{ secrets.ECS_SSH_PORT }}" \
             frontend/ \
-            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:/var/www/rk3576-streamer/monitor/"
+            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:/var/www/rk3576-streamer"
