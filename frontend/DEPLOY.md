@@ -6,7 +6,7 @@
 
 1. 推送 `main` 分支时自动触发部署。
 2. Actions 通过 SSH 连接 ECS。
-3. 使用 `rsync` 将 `frontend/` 目录同步到 ECS 上的静态站点目录。
+3. 使用 `rsync` 将 `frontend/` 目录同步到 ECS 上的 `/monitor/` 子目录。
 4. ECS 上的 Nginx 负责对外提供静态页面。
 
 ## 需要配置的 GitHub Secrets
@@ -15,7 +15,7 @@
 - `ECS_USER`：SSH 登录用户
 - `ECS_SSH_KEY`：用于登录 ECS 的**私钥内容**，不是公钥
 - `ECS_SSH_PORT`：SSH 端口，默认一般是 `22`
-- `ECS_TARGET_DIR`：Nginx 静态目录，例如 `/var/www/rk3576-streamer`
+- `ECS_TARGET_DIR`：Nginx 静态目录，例如 `/var/www/rk3576-streamer/monitor`
 
 ## SSH Key 常见错误
 
@@ -41,7 +41,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/rk3576_github_actions -C "github-actions"
 建议把前端页面放到类似下面的目录：
 
 ```bash
-/var/www/rk3576-streamer/
+/var/www/rk3576-streamer/monitor/
 ```
 
 然后让 Nginx 的 `root` 指向这个目录即可。
