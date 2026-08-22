@@ -1,5 +1,7 @@
 #include "StreamerApp.h"
 
+#include <cerrno>
+
 
 using namespace std;
 
@@ -16,6 +18,41 @@ static std::string get_current_time_string() {
     std::stringstream ss;
     ss << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S");
     return ss.str();
+}
+
+static std::string get_file_time_string() {
+    auto now = std::chrono::system_clock::now();
+    auto now_time = std::chrono::system_clock::to_time_t(now);
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&now_time), "%Y%m%d_%H%M%S")
+       << '_' << std::setfill('0') << std::setw(3) << now_ms.count();
+    return ss.str();
+}
+
+static bool ensure_directory_exists(const std::string& path) {
+    if (path.empty()) return false;
+    if (access(path.c_str(), F_OK) == 0) return true;
+
+    std::string current;
+    if (!path.empty() && path.front() == '/') {
+        current = "/";
+    }
+
+    std::stringstream ss(path);
+    std::string part;
+    while (std::getline(ss, part, '/')) {
+        if (part.empty()) continue;
+        if (!current.empty() && current.back() != '/') {
+            current += "/";
+        }
+        current += part;
+        if (mkdir(current.c_str(), 0777) != 0 && errno != EEXIST) {
+            return false;
+        }
+    }
+    return true;
 }
 
 StreamerApp::StreamerApp() :
@@ -95,6 +132,10 @@ bool StreamerApp::init(const AppConfig& config) {
         return false;
     }
     cout << ">>[内存] 专用内存池分配成功" << endl;
+
+    if (m_config.enable_person_snapshot) {
+        cout << ">>[AI] 人员进出截图已启用，目录: " << m_config.snapshot_dir << endl;
+    }
 
     cout << ">>[App] 初始化完成" << endl;
     return true;
@@ -277,6 +318,10 @@ void StreamerApp::runMainLoop() {
                             cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
             }
 
+            if (m_config.enable_person_snapshot) {
+                updatePersonPresence(objects, frame_rgb);
+            }
+
             // E. RGB 转回 NV12 给编码器
             rga_convert(m_draw_buf, -1, m_config.width, m_config.height, RK_FORMAT_RGB_888,
                        nullptr, dst_fd, m_config.width, m_config.height, RK_FORMAT_YCbCr_420_SP);
@@ -370,6 +415,68 @@ void StreamerApp::runMainLoop() {
             frame_count = 0;
             total_bytes = 0;
         }
+    }
+}
+
+void StreamerApp::savePersonSnapshot(const std::string& event_name, const cv::Mat& frame_rgb) {
+    if (frame_rgb.empty()) {
+        return;
+    }
+
+    long long now_ms = get_time_ms();
+    if (m_last_person_snapshot_ms > 0 &&
+        now_ms - m_last_person_snapshot_ms < m_config.snapshot_interval_ms) {
+        return;
+    }
+
+    if (!ensure_directory_exists(m_config.snapshot_dir)) {
+        cerr << ">>[Snap] 创建截图目录失败: " << m_config.snapshot_dir << endl;
+        return;
+    }
+
+    std::string file_path = m_config.snapshot_dir + "/" + event_name + "_" + get_file_time_string() + ".jpg";
+
+    cv::Mat snapshot_bgr;
+    cv::cvtColor(frame_rgb, snapshot_bgr, cv::COLOR_RGB2BGR);
+
+    if (cv::imwrite(file_path, snapshot_bgr)) {
+        m_last_person_snapshot_ms = now_ms;
+        cout << ">>[Snap] 已保存人员" << event_name << "截图: " << file_path << endl;
+    } else {
+        cerr << ">>[Snap] 保存截图失败: " << file_path << endl;
+    }
+}
+
+void StreamerApp::updatePersonPresence(const std::vector<Object>& objects, const cv::Mat& frame_rgb) {
+    constexpr int kStableFrames = 3;
+    bool person_detected = false;
+
+    for (const auto& obj : objects) {
+        if (obj.label == "person" && obj.prob >= 0.5f) {
+            person_detected = true;
+            break;
+        }
+    }
+
+    if (person_detected) {
+        m_person_present_streak++;
+        m_person_absent_streak = 0;
+
+        if (!m_person_present && m_person_present_streak >= kStableFrames) {
+            m_person_present = true;
+            m_person_present_streak = 0;
+            savePersonSnapshot("enter", frame_rgb);
+        }
+        return;
+    }
+
+    m_person_absent_streak++;
+    m_person_present_streak = 0;
+
+    if (m_person_present && m_person_absent_streak >= kStableFrames) {
+        m_person_present = false;
+        m_person_absent_streak = 0;
+        savePersonSnapshot("exit", frame_rgb);
     }
 }
 

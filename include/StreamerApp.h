@@ -53,6 +53,10 @@ private:
     void recordWorker();
     //生成录像文件名
     std::string generateFileName();
+    // 保存人员进出截图
+    void savePersonSnapshot(const std::string& event_name, const cv::Mat& frame_rgb);
+    // 根据检测结果更新人员进出状态
+    void updatePersonPresence(const std::vector<Object>& objects, const cv::Mat& frame_rgb);
     // 统一资源释放 (被 stop 和 析构函数调用)
     void releaseResources();
 private:
@@ -84,5 +88,11 @@ private:
     // --- 6. 专用内存池 (避免循环内 malloc) ---
     void* m_ai_buf   = nullptr; // 给 AI 用的 (640x640 RGB)
     void* m_draw_buf = nullptr; // 给 OpenCV 画图用的 (1280x720 RGB)
+
+    // --- 7. 人员进出状态 ---
+    bool m_person_present = false;
+    int  m_person_present_streak = 0;
+    int  m_person_absent_streak = 0;
+    long long m_last_person_snapshot_ms = 0;
 
 };

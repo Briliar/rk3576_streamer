@@ -12,6 +12,7 @@
 * **硬件全链路**：V4L2 采集 -> RGA 格式转换/缩放 -> MPP H.264 编码，CPU 占用极低。
 * **多路分发**：支持同时进行 SRT 网络推流和本地 SD 卡录像。
 * **AI 集成**：集成 RKNN (NPU) 运行 YOLOv5/v8 目标检测，支持 OSD 画框。
+* **人员进出截图**：检测到人员进入或离开时自动保存截图，后续可扩展为上报远程服务器。
 * **灵活配置**：支持命令行参数启动 (`-s`, `-r`, `-a`) 和 `config.h` 静态配置。
 * **音频支持**：ALSA 采集 + FAAC 编码，音视频同步封装 (MPEG-TS)。
 * **文件管理**：录像自动按日期分目录存储，支持按时长自动切片。
@@ -40,6 +41,8 @@
 * OpenCV 
 * ALSA (libasound)
 * SRT (libsrt)
+
+人员进出截图默认保存到 `/mnt/sd/snapshots`，可在 `include/config.h` 中修改 `DEFAULT_SNAPSHOT_DIR`。
 
 ### 2. 编译
 ```bash
