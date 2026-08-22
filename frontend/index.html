@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RK3576 监控面板</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div>
+        <p class="eyebrow">RK3576 Streamer</p>
+        <h1>监控控制台</h1>
+        <p class="muted">实时查看视频、切换 AI、查看人员进出事件。</p>
+      </div>
+
+      <div class="card status-card">
+        <div class="status-row"><span>设备状态</span><strong class="ok">在线</strong></div>
+        <div class="status-row"><span>推流状态</span><strong class="ok">已连接</strong></div>
+        <div class="status-row"><span>AI 检测</span><strong class="warn">开启</strong></div>
+        <div class="status-row"><span>截图冷却</span><strong>60 秒</strong></div>
+      </div>
+
+      <div class="card controls-card">
+        <h2>功能开关</h2>
+        <label class="toggle"><input type="checkbox" checked /><span>AI 检测</span></label>
+        <label class="toggle"><input type="checkbox" checked /><span>人员进出截图</span></label>
+        <label class="toggle"><input type="checkbox" checked /><span>实时推流</span></label>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="card video-card">
+        <div class="card-head">
+          <h2>实时画面</h2>
+          <span class="pill">WebRTC / HLS</span>
+        </div>
+        <div class="video-placeholder">
+          <div>
+            <p>这里后续接 mediamtx 播放地址</p>
+            <small>建议优先 WebRTC，低延迟</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>最近事件</h2>
+          <ul class="event-list">
+            <li><span class="dot enter"></span> 08:15:21  检测到 person 进入</li>
+            <li><span class="dot shot"></span> 08:15:21  已保存 enter 截图</li>
+            <li><span class="dot exit"></span> 08:16:12  检测到 person 离开</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>截图墙</h2>
+          <div class="shots">
+            <div class="shot">截图 1</div>
+            <div class="shot">截图 2</div>
+            <div class="shot">截图 3</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
