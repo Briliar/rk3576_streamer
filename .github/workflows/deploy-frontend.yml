@@ -1,0 +1,39 @@
+name: Deploy Frontend to ECS
+
+on:
+  push:
+    branches:
+      - feature/person-snapshot
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        env:
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$ECS_SSH_KEY" | tr -d '\r' | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Add ECS host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.ECS_SSH_PORT }}" -H "${{ secrets.ECS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync frontend files to ECS
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_rsa -p ${{ secrets.ECS_SSH_PORT }}" \
+            frontend/ \
+            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:/var/www/rk3576-streamer/"
