@@ -13,9 +13,28 @@
 
 - `ECS_HOST`：ECS 公网 IP 或域名
 - `ECS_USER`：SSH 登录用户
-- `ECS_SSH_KEY`：用于登录 ECS 的私钥内容
+- `ECS_SSH_KEY`：用于登录 ECS 的**私钥内容**，不是公钥
 - `ECS_SSH_PORT`：SSH 端口，默认一般是 `22`
 - `ECS_TARGET_DIR`：Nginx 静态目录，例如 `/var/www/rk3576-streamer`
+
+## SSH Key 常见错误
+
+如果 GitHub Actions 报 `Error loading key \"(stdin)\": error in libcrypto`，通常是下面几种情况之一：
+
+- 你把**公钥**填进了 `ECS_SSH_KEY`
+- 私钥内容被复制坏了，少了开头或结尾的标记
+- 私钥带了 Windows 换行符或额外空格
+- 私钥被加密了，但 workflow 没有提供 passphrase
+
+最稳的做法是重新生成一对专门给部署用的 SSH key，然后把**私钥**完整复制到 GitHub Secrets 里。
+
+例如：
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/rk3576_github_actions -C "github-actions"
+```
+
+然后把 `~/.ssh/rk3576_github_actions.pub` 追加到 ECS 的 `~/.ssh/authorized_keys`，再把 `~/.ssh/rk3576_github_actions` 的内容放进 `ECS_SSH_KEY`。
 
 ## ECS 目录建议
 
